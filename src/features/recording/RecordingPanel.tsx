@@ -1,9 +1,7 @@
-import { useEffect, useState } from 'react';
-import { Badge } from '../../components/ui/Badge.tsx';
+import { useEffect } from 'react';
 import { Button } from '../../components/ui/Button.tsx';
 import { StatusIndicator } from '../../components/ui/StatusIndicator.tsx';
 import { formatBytes, formatDuration } from '../../lib/format.ts';
-import type { RecordingResult } from './AudioRecorder.ts';
 import { LevelMeter } from './LevelMeter.tsx';
 import { recorder, RECORDING_WARN_MINUTES, useRecorderState } from './recordingSession.ts';
 
@@ -16,17 +14,9 @@ const STATUS: Record<string, { tone: 'neutral' | 'info' | 'success' | 'warning' 
   error: { tone: 'danger', label: 'Recording problem' },
 };
 
-const ENDED: Record<RecordingResult['endedBy'], string | null> = {
-  user: null,
-  'device-lost': 'ended early — microphone disconnected',
-  'recorder-error': 'ended early — recorder error',
-  'page-hidden-stop': 'ended while the tab was in the background',
-  interrupted: 'recovered after the page was reloaded or closed',
-};
 
-export function RecordingPanel({ onPlay }: { onPlay?: (rec: RecordingResult) => void }) {
+export function RecordingPanel() {
   const s = useRecorderState();
-  const [confirmDiscard, setConfirmDiscard] = useState<string | null>(null);
   useEffect(() => void recorder.refreshDevices(), []);
 
   const active = s.status === 'recording' || s.status === 'paused' || s.status === 'stopping';
@@ -136,61 +126,15 @@ export function RecordingPanel({ onPlay }: { onPlay?: (rec: RecordingResult) => 
       )}
       {active && s.hidden && <p className="text-xs text-slate-500">This tab is in the background. Recording continues; the level meter resumes when you return.</p>}
 
-      {s.restoring && <p className="text-xs text-slate-500">Checking this browser for saved recordings…</p>}
-      {s.recordings.length > 0 && (
-        <div className="flex flex-col gap-2 border-t border-slate-200 pt-3">
-          <h3 className="text-xs font-semibold text-slate-700">Recordings saved in this browser</h3>
-          <ul className="flex flex-col gap-2">
-            {s.recordings.map((r) => (
-              <li key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-slate-200 px-3 py-2 text-xs">
-                <span className="min-w-0 flex-1 truncate font-mono text-slate-700" title={r.filename}>
-                  {r.filename}
-                </span>
-                <span className="tabular text-slate-500">
-                  {r.approximateDuration ? '≈ ' : ''}
-                  {formatDuration(r.durationMs)} · {formatBytes(r.size)}
-                </span>
-                {ENDED[r.endedBy] && <Badge tone="warning">{ENDED[r.endedBy]}</Badge>}
-                {r.downloaded ? <Badge tone="success">✓ Downloaded</Badge> : <Badge tone="info">Not downloaded yet</Badge>}
-                {r.storage === 'memory-only' && <Badge tone="danger">Not backed up — lost on reload</Badge>}
-                <span className="flex gap-1.5">
-                  <a
-                    href={r.url}
-                    download={r.filename}
-                    onClick={() => recorder.markDownloaded(r.id)}
-                    className="inline-flex h-8 items-center rounded-md border border-navy-900 bg-navy-900 px-2.5 text-xs font-medium text-white hover:bg-navy-800"
-                  >
-                    Download
-                  </a>
-                  {onPlay && (
-                    <Button size="sm" onClick={() => onPlay(r)}>
-                      Play in player
-                    </Button>
-                  )}
-                  {confirmDiscard === r.id ? (
-                    <span className="flex items-center gap-1.5" role="group" aria-label="Confirm discard">
-                      <span className="text-red-700">{r.downloaded ? 'Remove from this browser?' : 'Not downloaded — delete permanently?'}</span>
-                      <Button size="sm" variant="danger" onClick={() => void recorder.discard(r.id).then(() => setConfirmDiscard(null))}>
-                        Delete
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => setConfirmDiscard(null)}>
-                        Cancel
-                      </Button>
-                    </span>
-                  ) : (
-                    <Button size="sm" variant="ghost" onClick={() => setConfirmDiscard(r.id)} aria-label={`Discard ${r.filename}`}>
-                      Discard
-                    </Button>
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
+      {s.recordings[0]?.saveStatus === 'saving' && <p className="text-xs text-slate-600" role="status">Saving the recording to this browser…</p>}
+      {s.recordings[0]?.saveStatus === 'saved' && s.status === 'idle' && (
+        <p className="text-xs text-emerald-800" role="status">
+          ✓ “{s.recordings[0].name}” is saved — find it under Saved recordings.
+        </p>
       )}
 
       <p className="text-[11px] leading-relaxed text-slate-500">
-        Audio stays in this browser and is never uploaded or transcribed — the transcript comes from a separate demo stream. Recordings are saved in this browser (and backed up every second while recording) so they survive a reload, until you download or discard them. Clearing site data or private browsing removes them, so download recordings you need to keep. You are responsible for obtaining any permissions required and for complying with the court’s rules on recording proceedings.
+        Audio stays on this device and is never uploaded or transcribed — the transcript comes from a separate demo stream. While recording, audio is backed up every second so an interruption loses at most about a second. You are responsible for obtaining any permissions required and for complying with the court’s rules on recording proceedings.
       </p>
     </div>
   );

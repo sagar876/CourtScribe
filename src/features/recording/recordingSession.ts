@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { CASE_SLUG } from '../case/caseSession.ts';
+import { CASE, CASE_SLUG } from '../case/caseSession.ts';
 import { AudioRecorder, type RecorderState } from './AudioRecorder.ts';
 import { IndexedDbPersistence } from './recordingStorage.ts';
 
@@ -16,6 +16,7 @@ export const recorder = new AudioRecorder({
   warnAfterMs: RECORDING_WARN_MINUTES * 60_000,
   // Keeps recordings across reloads/crashes until downloaded or discarded. Never uploaded.
   persistence: typeof indexedDB !== 'undefined' ? new IndexedDbPersistence() : null,
+  caseInfo: { caseId: CASE.reference, caseName: CASE.name, sessionId: CASE.sessionId },
 });
 
 export function useRecorderState(): RecorderState {

@@ -7,4 +7,9 @@ import './index.css';
 // invocation would distort the render counters the Performance Lab measures.
 handleChunkPreloadErrors();
 
+// Offline support (production builds only, so it never interferes with the dev server).
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => void navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}
+
 createRoot(document.getElementById('root')!).render(<App />);

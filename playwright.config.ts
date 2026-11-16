@@ -15,10 +15,15 @@ export default defineConfig({
     viewport: { width: 1440, height: 1000 },
     launchOptions: { args: ['--autoplay-policy=no-user-gesture-required'] },
   },
-  webServer: {
-    command: 'npm run dev',
-    url: process.env.E2E_BASE_URL ?? 'http://localhost:5173',
-    reuseExistingServer: true,
-    timeout: 60_000,
-  },
+  // The dev server is never started from here (it would run alongside yours and share Vite's cache):
+  // start `npm run dev` yourself and point E2E_BASE_URL at it.
+  webServer: [
+    {
+      // Production build for offline/service-worker and deep-link tests (a static server, not a second dev server).
+      command: 'npm run build && npx vite preview --port 4173 --strictPort',
+      url: process.env.E2E_PREVIEW_URL ?? 'http://localhost:4173',
+      reuseExistingServer: true,
+      timeout: 120_000,
+    },
+  ],
 });

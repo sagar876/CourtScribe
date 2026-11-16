@@ -62,7 +62,7 @@ test.describe('UI audit in active states', () => {
       await page.getByRole('button', { name: 'Stop feed' }).click();
       await page.getByRole('button', { name: 'Disconnect' }).first().click();
       await panel.getByRole('button', { name: '■ Stop Recording' }).click();
-      await expect(panel.getByRole('link', { name: 'Download' })).toBeVisible();
+      await expect(page.locator('[data-tour="recording-library"]').getByRole('link', { name: 'Download original' }).first()).toBeVisible();
       await page.screenshot({ path: `${SHOTS}/workspace-stopped-${w}x${h}.png` });
       findings.push(...(await auditPage(page)));
       if (findings.length) console.log(`\n[active ${w}×${h}]\n` + findings.map((f) => `  ${f.kind}: ${f.detail}`).join('\n'));

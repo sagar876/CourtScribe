@@ -9,6 +9,13 @@
  */
 export interface StoredRecording {
   id: string;
+  /** User-editable display name. */
+  name: string;
+  caseId: string;
+  caseName: string;
+  sessionId: string;
+  /** When the file was written to storage. */
+  createdAt: number;
   filename: string;
   mimeType: string;
   size: number;
@@ -24,6 +31,9 @@ export interface InProgressRecording {
   mimeType: string;
   startedAt: number;
   filename: string;
+  caseId: string;
+  caseName: string;
+  sessionId: string;
   chunks: Blob[];
 }
 
@@ -32,6 +42,7 @@ export interface RecordingPersistence {
   listRecordings(): Promise<StoredRecording[]>;
   deleteRecording(id: string): Promise<void>;
   markDownloaded(id: string): Promise<void>;
+  rename(id: string, name: string): Promise<void>;
   /** Chunk backup while recording. `meta` is stored with the first chunk. */
   appendChunk(id: string, index: number, chunk: Blob, meta?: Omit<InProgressRecording, 'chunks' | 'id'>): Promise<void>;
   clearChunks(id: string): Promise<void>;
@@ -41,6 +52,24 @@ export interface RecordingPersistence {
 
 const DB_NAME = 'courtscribe-recordings';
 const DB_VERSION = 1;
+
+/** Fills fields added after a recording was first stored (older entries). */
+export function normalizeStored(r: Partial<StoredRecording> & Pick<StoredRecording, 'id' | 'blob' | 'startedAt'>): StoredRecording {
+  return {
+    filename: `${r.id}.webm`,
+    mimeType: r.blob.type || 'application/octet-stream',
+    size: r.blob.size,
+    durationMs: 0,
+    endedBy: 'user',
+    downloaded: false,
+    caseId: 'unknown case',
+    caseName: '',
+    sessionId: '',
+    createdAt: r.startedAt,
+    name: `Recording ${new Date(r.startedAt).toLocaleString()}`,
+    ...r,
+  } as StoredRecording;
+}
 
 function request<T>(req: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -88,7 +117,7 @@ export class IndexedDbPersistence implements RecordingPersistence {
   async listRecordings(): Promise<StoredRecording[]> {
     const db = await this.open();
     const all = await request(db.transaction('recordings').objectStore('recordings').getAll() as IDBRequest<StoredRecording[]>);
-    return all.sort((a, b) => b.startedAt - a.startedAt);
+    return all.map(normalizeStored).sort((a, b) => b.startedAt - a.startedAt);
   }
 
   async deleteRecording(id: string): Promise<void> {
@@ -104,6 +133,16 @@ export class IndexedDbPersistence implements RecordingPersistence {
     const store = tx.objectStore('recordings');
     const rec = (await request(store.get(id))) as StoredRecording | undefined;
     if (rec) store.put({ ...rec, downloaded: true });
+    await done(tx);
+  }
+
+  async rename(id: string, name: string): Promise<void> {
+    const db = await this.open();
+    const tx = db.transaction('recordings', 'readwrite');
+    const store = tx.objectStore('recordings');
+    const rec = (await request(store.get(id))) as StoredRecording | undefined;
+    if (!rec) throw new Error('Recording not found');
+    store.put({ ...rec, name });
     await done(tx);
   }
 
@@ -157,6 +196,11 @@ export class MemoryPersistence implements RecordingPersistence {
   async markDownloaded(id: string) {
     const r = this.recordings.get(id);
     if (r) this.recordings.set(id, { ...r, downloaded: true });
+  }
+  async rename(id: string, name: string) {
+    const r = this.recordings.get(id);
+    if (!r) throw new Error('Recording not found');
+    this.recordings.set(id, { ...r, name });
   }
   async appendChunk(id: string, index: number, chunk: Blob, meta?: Omit<InProgressRecording, 'chunks' | 'id'>) {
     if (meta) this.meta.set(id, { id, ...meta });

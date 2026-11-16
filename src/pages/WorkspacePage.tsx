@@ -5,6 +5,7 @@ import { TranscriptStore } from '../features/transcript/TranscriptStore.ts';
 import { AudioEngine } from '../features/audio/AudioEngine.ts';
 import { AudioPlayer } from '../features/audio/AudioPlayer.tsx';
 import { CASE } from '../features/case/caseSession.ts';
+import { RecordingLibrary } from '../features/recording/RecordingLibrary.tsx';
 import { RecordingPanel } from '../features/recording/RecordingPanel.tsx';
 import { Badge } from '../components/ui/Badge.tsx';
 import { Button } from '../components/ui/Button.tsx';
@@ -131,10 +132,14 @@ export function WorkspacePage() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card title="Audio recording" description="Captures audio from a microphone on this device. Independent of the transcript stream." className="h-full">
-          <RecordingPanel onPlay={(r) => audio.loadUrl(r.url, r.filename)} />
+          <RecordingPanel />
         </Card>
         <TranscriptStatusCard />
       </div>
+
+      <Card title="Saved recordings" description="Recordings stored on this device. They play offline, without the transcript server.">
+        <RecordingLibrary onOpenWithTranscript={(r) => audio.loadUrl(r.url, r.name)} />
+      </Card>
 
       <Card title="Playback" description="Play a recording or a local audio file, synchronised with the transcript by segment start time. Click a segment to seek to it.">
         <AudioPlayer engine={audio} store={store} />
