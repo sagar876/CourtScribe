@@ -1,4 +1,5 @@
 import { trackResource } from '../../lib/resources.ts';
+import type { RecordingPersistence } from './recordingStorage.ts';
 
 export type RecorderStatus = 'idle' | 'requesting' | 'recording' | 'paused' | 'stopping' | 'error';
 
@@ -16,7 +17,13 @@ export interface RecordingResult {
   durationMs: number;
   startedAt: number;
   /** Why the recording ended, when it was not a normal stop. */
-  endedBy: 'user' | 'device-lost' | 'recorder-error' | 'page-hidden-stop';
+  endedBy: 'user' | 'device-lost' | 'recorder-error' | 'page-hidden-stop' | 'interrupted';
+  /** The user has downloaded this file at least once. */
+  downloaded: boolean;
+  /** Whether a copy is kept in this browser's storage (survives reloads) or only in memory. */
+  storage: 'browser' | 'memory-only';
+  /** Duration estimated from backed-up chunks (recovered after an interruption). */
+  approximateDuration?: boolean;
 }
 
 export interface RecorderState {
@@ -42,6 +49,10 @@ export interface RecorderState {
   levelSupported: boolean;
   recordings: RecordingResult[];
   interruptedByReload: boolean;
+  /** Saved recordings are being read back from browser storage. */
+  restoring: boolean;
+  /** Problems writing the browser backup (e.g. storage full). Recording itself continues. */
+  storageError: string | null;
 }
 
 /** Browser APIs the recorder needs — injectable so it can be tested without hardware. */
@@ -89,6 +100,7 @@ export const MIME_CANDIDATES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/o
 
 const EXTENSIONS: Record<string, string> = { 'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/mp4': 'm4a', 'audio/aac': 'aac' };
 const RELOAD_FLAG = 'courtscribe.recordingInProgress';
+const STORAGE_FAILED = 'A backup copy could not be saved in this browser (storage may be full or blocked). Download the recording now — it will be lost if the page reloads.';
 const TIMESLICE_MS = 1_000;
 let recordingCounter = 0;
 /** Unique even for recordings started within the same millisecond. */
@@ -139,13 +151,14 @@ export class AudioRecorder {
   private startToken = 0;
   private releases: (() => void)[] = [];
   private globalCleanup: (() => void)[] = [];
+  private chunkIndex = 0;
   private listeners = new Set<() => void>();
   private levelListeners = new Set<(level: number) => void>();
   private state: RecorderState;
   level = 0;
 
   constructor(
-    private readonly options: { filenamePrefix: string; warnAfterMs: number },
+    private readonly options: { filenamePrefix: string; warnAfterMs: number; persistence?: RecordingPersistence | null },
     env?: Partial<RecorderEnv>,
   ) {
     this.env = { ...browserEnv(), ...env };
@@ -160,10 +173,61 @@ export class AudioRecorder {
     this.env.storage?.removeItem(RELOAD_FLAG);
     this.state = {
       status: 'idle', supported: unsupportedReason === null, unsupportedReason, devices: [], devicesLabelled: false, selectedDeviceId: '',
-      error: null, notice: interrupted ? 'A recording was in progress when the page was reloaded or closed. Recordings are held in browser memory, so it could not be recovered.' : null,
+      error: null,
+      notice: interrupted && !options.persistence ? 'A recording was in progress when the page was reloaded or closed. Recordings are held in browser memory, so it could not be recovered.' : null,
       mimeType: null, durationMs: 0, bytes: 0, chunks: 0, recordingId: null, startedAt: null, hidden: this.env.doc?.visibilityState === 'hidden',
       longRecordingWarning: false, recorderErrors: 0, levelSupported: Boolean(this.env.AudioContext), recordings: [], interruptedByReload: interrupted,
+      restoring: Boolean(options.persistence), storageError: null,
     };
+    if (options.persistence) this.ready = this.restore(options.persistence, interrupted);
+  }
+
+  /** Resolves once saved/interrupted recordings have been restored from browser storage. */
+  ready: Promise<void> = Promise.resolve();
+
+  /**
+   * Reads back what an earlier page left behind: finished recordings not yet
+   * discarded, and chunks of a recording that was interrupted mid-capture.
+   */
+  private async restore(store: RecordingPersistence, interrupted: boolean): Promise<void> {
+    const notices: string[] = [];
+    let recovered = 0;
+    try {
+      for (const partial of await store.listInProgress()) {
+        if (partial.id === this.state.recordingId) continue; // the current recording, not a leftover
+        const blob = new Blob(partial.chunks, { type: partial.mimeType });
+        if (blob.size > 0) {
+          await store.saveRecording({
+            id: partial.id, filename: partial.filename, mimeType: partial.mimeType, size: blob.size,
+            durationMs: partial.chunks.length * TIMESLICE_MS, startedAt: partial.startedAt, endedBy: 'interrupted', downloaded: false, blob,
+          });
+          recovered++;
+        }
+        await store.clearChunks(partial.id);
+      }
+      const saved = await store.listRecordings();
+      const restored = saved
+        .filter((r) => !this.state.recordings.some((x) => x.id === r.id))
+        .map((r): RecordingResult => {
+          const url = this.env.createObjectURL(r.blob);
+          this.urlReleases.set(r.id, trackResource('object-url'));
+          return {
+            id: r.id, url, filename: r.filename, mimeType: r.mimeType, size: r.size, durationMs: r.durationMs, startedAt: r.startedAt,
+            endedBy: r.endedBy as RecordingResult['endedBy'], downloaded: r.downloaded, storage: 'browser', approximateDuration: r.endedBy === 'interrupted',
+          };
+        });
+      if (recovered) notices.push(`Recovered ${recovered === 1 ? 'a recording' : `${recovered} recordings`} interrupted by a page reload or closed tab — the audio up to about one second before the interruption is kept below.`);
+      else if (interrupted) notices.push('A recording was in progress when the page was reloaded or closed, and no backup of it was found in this browser.');
+      const waiting = restored.filter((r) => !r.downloaded).length;
+      if (!recovered && waiting) notices.push(`${waiting === 1 ? 'A recording that has' : `${waiting} recordings that have`} not been downloaded yet ${waiting === 1 ? 'was' : 'were'} restored from this browser.`);
+      this.set({ recordings: [...this.state.recordings, ...restored], restoring: false, notice: notices.join(' ') || null });
+    } catch (err) {
+      this.set({
+        restoring: false,
+        storageError: `Saved recordings could not be read from this browser (${err instanceof Error ? err.message : String(err)}).`,
+        notice: interrupted ? 'A recording was in progress when the page was reloaded or closed and could not be recovered.' : this.state.notice,
+      });
+    }
   }
 
   /** Listeners that only matter while the app is open; call once from the app shell. Returns cleanup. */
@@ -178,7 +242,7 @@ export class AudioRecorder {
     };
     this.env.doc?.addEventListener('visibilitychange', onVisibility);
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (!this.isActive()) return;
+      if (!this.isActive() && !this.hasUndownloaded()) return;
       e.preventDefault();
       e.returnValue = ''; // legacy browsers need this to show the prompt
     };
@@ -214,6 +278,10 @@ export class AudioRecorder {
     this.set({ selectedDeviceId: deviceId });
   };
 
+  hasUndownloaded(): boolean {
+    return this.state.recordings.some((r) => !r.downloaded);
+  }
+
   // ---------- lifecycle ----------
 
   isActive(): boolean {
@@ -223,7 +291,7 @@ export class AudioRecorder {
   /** Must be called from an explicit user action. */
   start = async (): Promise<void> => {
     if (!this.state.supported || this.state.status === 'requesting' || this.isActive()) return;
-    this.set({ status: 'requesting', error: null, notice: null, longRecordingWarning: false });
+    this.set({ status: 'requesting', error: null, notice: null, longRecordingWarning: false, storageError: null });
     const token = ++this.startToken;
     const md = this.env.mediaDevices!;
     const Recorder = this.env.MediaRecorder!;
@@ -263,10 +331,17 @@ export class AudioRecorder {
     this.endedBy = 'user';
     const id = newRecordingId();
 
+    this.chunkIndex = 0;
+    const startedAt = Date.now();
+    const filename = this.filenameFor(startedAt, mimeType || 'audio/webm');
     recorder.ondataavailable = (e: BlobEvent) => {
       if (e.data && e.data.size > 0) {
         this.chunks.push(e.data);
         this.set({ bytes: this.state.bytes + e.data.size, chunks: this.chunks.length });
+        // Back up every chunk so an interrupted recording can be reassembled after a reload.
+        const index = this.chunkIndex++;
+        const meta = index === 0 ? { mimeType: (recorder.mimeType || mimeType || 'audio/webm').split(';')[0]!, startedAt, filename } : undefined;
+        this.options.persistence?.appendChunk(id, index, e.data, meta).catch(() => this.set({ storageError: STORAGE_FAILED }));
       }
     };
     recorder.onerror = (e: Event) => {
@@ -298,7 +373,7 @@ export class AudioRecorder {
     }
     this.segmentStart = this.env.now();
     this.env.storage?.setItem(RELOAD_FLAG, '1');
-    this.set({ status: 'recording', mimeType: recorder.mimeType || mimeType || null, durationMs: 0, bytes: 0, chunks: 0, recordingId: id, startedAt: Date.now(), interruptedByReload: false });
+    this.set({ status: 'recording', mimeType: recorder.mimeType || mimeType || null, durationMs: 0, bytes: 0, chunks: 0, recordingId: id, startedAt, interruptedByReload: false });
     this.tick = setInterval(() => this.onTick(), 500);
     this.releases.push(trackResource('interval'));
   };
@@ -332,12 +407,28 @@ export class AudioRecorder {
     else this.finalize();
   };
 
-  discard = (id: string): void => {
+  /**
+   * Deletes from browser storage first and only then from the list, so a reload or tab close
+   * right after "Delete" can never bring back a recording the user saw disappear.
+   */
+  discard = async (id: string): Promise<void> => {
     const rec = this.state.recordings.find((r) => r.id === id);
     if (!rec) return;
+    try {
+      await this.options.persistence?.deleteRecording(id);
+    } catch {
+      this.set({ storageError: 'The recording could not be removed from this browser’s storage. Please try again.' });
+      return;
+    }
     this.env.revokeObjectURL(rec.url);
     this.set({ recordings: this.state.recordings.filter((r) => r.id !== id) });
     this.releaseUrl(id);
+  };
+
+  /** Call when the user downloads a recording (the browser gives no reliable "download finished" signal). */
+  markDownloaded = (id: string): void => {
+    this.set({ recordings: this.state.recordings.map((r) => (r.id === id ? { ...r, downloaded: true } : r)) });
+    void this.options.persistence?.markDownloaded(id).catch(() => {});
   };
 
   dismissNotice = (): void => this.set({ notice: null, interruptedByReload: false });
@@ -388,17 +479,33 @@ export class AudioRecorder {
     }
     const url = this.env.createObjectURL(blob);
     this.urlReleases.set(id, trackResource('object-url'));
-    const stamp = new Date(startedAt).toISOString().replace(/[:.]/g, '-').replace(/-\d{3}Z$/, 'Z');
     const result: RecordingResult = {
       id, url, mimeType, size: blob.size, durationMs, startedAt,
-      filename: `${this.options.filenamePrefix}_${stamp}.${EXTENSIONS[mimeType] ?? 'webm'}`,
+      filename: this.filenameFor(startedAt, mimeType),
       endedBy: this.endedBy,
+      downloaded: false,
+      storage: this.options.persistence ? 'browser' : 'memory-only',
     };
+    const store = this.options.persistence;
+    if (store) {
+      store
+        .saveRecording({ id, filename: result.filename, mimeType, size: blob.size, durationMs, startedAt, endedBy: this.endedBy, downloaded: false, blob })
+        .then(() => store.clearChunks(id))
+        .catch(() =>
+          this.set({ storageError: STORAGE_FAILED, recordings: this.state.recordings.map((r) => (r.id === id ? { ...r, storage: 'memory-only' } : r)) }),
+        );
+    }
     this.set({ status: this.endedBy === 'user' ? 'idle' : 'error', recordings: [result, ...this.state.recordings], recordingId: null, bytes: blob.size });
     if (this.endedBy === 'user') this.set({ error: null });
   }
 
   private urlReleases = new Map<string, () => void>();
+
+  private filenameFor(startedAt: number, mimeType: string): string {
+    const stamp = new Date(startedAt).toISOString().replace(/[:.]/g, '-').replace(/-\d{3}Z$/, 'Z');
+    const base = mimeType.split(';')[0]!;
+    return `${this.options.filenamePrefix}_${stamp}.${EXTENSIONS[base] ?? 'webm'}`;
+  }
 
   private releaseUrl(id: string): void {
     this.urlReleases.get(id)?.();

@@ -8,7 +8,8 @@ export default defineConfig({
   fullyParallel: false,
   reporter: 'list',
   use: {
-    baseURL: 'http://localhost:5173',
+    // Point at an already running dev server with E2E_BASE_URL; never start a second one alongside it.
+    baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:5173',
     // Use the locally installed Chrome; no browser download needed.
     channel: 'chrome',
     viewport: { width: 1440, height: 1000 },
@@ -16,7 +17,7 @@ export default defineConfig({
   },
   webServer: {
     command: 'npm run dev',
-    url: 'http://localhost:5173',
+    url: process.env.E2E_BASE_URL ?? 'http://localhost:5173',
     reuseExistingServer: true,
     timeout: 60_000,
   },

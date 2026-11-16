@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Badge } from '../../components/ui/Badge.tsx';
 import { Button } from '../../components/ui/Button.tsx';
 import { StatusIndicator } from '../../components/ui/StatusIndicator.tsx';
@@ -21,10 +21,12 @@ const ENDED: Record<RecordingResult['endedBy'], string | null> = {
   'device-lost': 'ended early — microphone disconnected',
   'recorder-error': 'ended early — recorder error',
   'page-hidden-stop': 'ended while the tab was in the background',
+  interrupted: 'recovered after the page was reloaded or closed',
 };
 
 export function RecordingPanel({ onPlay }: { onPlay?: (rec: RecordingResult) => void }) {
   const s = useRecorderState();
+  const [confirmDiscard, setConfirmDiscard] = useState<string | null>(null);
   useEffect(() => void recorder.refreshDevices(), []);
 
   const active = s.status === 'recording' || s.status === 'paused' || s.status === 'stopping';
@@ -122,6 +124,11 @@ export function RecordingPanel({ onPlay }: { onPlay?: (rec: RecordingResult) => 
           </button>
         </div>
       )}
+      {s.storageError && (
+        <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-800" role="alert">
+          {s.storageError}
+        </p>
+      )}
       {s.longRecordingWarning && (
         <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" role="status">
           This recording has passed {RECORDING_WARN_MINUTES} minutes ({formatBytes(s.bytes)} in browser memory). Consider stopping and downloading it, then starting a new recording.
@@ -129,9 +136,10 @@ export function RecordingPanel({ onPlay }: { onPlay?: (rec: RecordingResult) => 
       )}
       {active && s.hidden && <p className="text-xs text-slate-500">This tab is in the background. Recording continues; the level meter resumes when you return.</p>}
 
+      {s.restoring && <p className="text-xs text-slate-500">Checking this browser for saved recordings…</p>}
       {s.recordings.length > 0 && (
         <div className="flex flex-col gap-2 border-t border-slate-200 pt-3">
-          <h3 className="text-xs font-semibold text-slate-700">Recordings in this browser session</h3>
+          <h3 className="text-xs font-semibold text-slate-700">Recordings saved in this browser</h3>
           <ul className="flex flex-col gap-2">
             {s.recordings.map((r) => (
               <li key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-slate-200 px-3 py-2 text-xs">
@@ -139,13 +147,17 @@ export function RecordingPanel({ onPlay }: { onPlay?: (rec: RecordingResult) => 
                   {r.filename}
                 </span>
                 <span className="tabular text-slate-500">
+                  {r.approximateDuration ? '≈ ' : ''}
                   {formatDuration(r.durationMs)} · {formatBytes(r.size)}
                 </span>
                 {ENDED[r.endedBy] && <Badge tone="warning">{ENDED[r.endedBy]}</Badge>}
+                {r.downloaded ? <Badge tone="success">✓ Downloaded</Badge> : <Badge tone="info">Not downloaded yet</Badge>}
+                {r.storage === 'memory-only' && <Badge tone="danger">Not backed up — lost on reload</Badge>}
                 <span className="flex gap-1.5">
                   <a
                     href={r.url}
                     download={r.filename}
+                    onClick={() => recorder.markDownloaded(r.id)}
                     className="inline-flex h-8 items-center rounded-md border border-navy-900 bg-navy-900 px-2.5 text-xs font-medium text-white hover:bg-navy-800"
                   >
                     Download
@@ -155,9 +167,21 @@ export function RecordingPanel({ onPlay }: { onPlay?: (rec: RecordingResult) => 
                       Play in player
                     </Button>
                   )}
-                  <Button size="sm" variant="ghost" onClick={() => recorder.discard(r.id)} aria-label={`Discard ${r.filename}`}>
-                    Discard
-                  </Button>
+                  {confirmDiscard === r.id ? (
+                    <span className="flex items-center gap-1.5" role="group" aria-label="Confirm discard">
+                      <span className="text-red-700">{r.downloaded ? 'Remove from this browser?' : 'Not downloaded — delete permanently?'}</span>
+                      <Button size="sm" variant="danger" onClick={() => void recorder.discard(r.id).then(() => setConfirmDiscard(null))}>
+                        Delete
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setConfirmDiscard(null)}>
+                        Cancel
+                      </Button>
+                    </span>
+                  ) : (
+                    <Button size="sm" variant="ghost" onClick={() => setConfirmDiscard(r.id)} aria-label={`Discard ${r.filename}`}>
+                      Discard
+                    </Button>
+                  )}
                 </span>
               </li>
             ))}
@@ -166,7 +190,7 @@ export function RecordingPanel({ onPlay }: { onPlay?: (rec: RecordingResult) => 
       )}
 
       <p className="text-[11px] leading-relaxed text-slate-500">
-        Audio stays in this browser and is never uploaded or transcribed — the transcript comes from a separate demo stream. Recordings are kept in memory until downloaded and are lost if the page is closed or reloaded. You are responsible for obtaining any permissions required and for complying with the court’s rules on recording proceedings.
+        Audio stays in this browser and is never uploaded or transcribed — the transcript comes from a separate demo stream. Recordings are saved in this browser (and backed up every second while recording) so they survive a reload, until you download or discard them. Clearing site data or private browsing removes them, so download recordings you need to keep. You are responsible for obtaining any permissions required and for complying with the court’s rules on recording proceedings.
       </p>
     </div>
   );

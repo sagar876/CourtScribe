@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { AudioRecorder, type RecorderEnv } from './AudioRecorder.ts';
+import { MemoryPersistence } from './recordingStorage.ts';
 
 class FakeTrack extends EventTarget {
   stopped = false;
@@ -75,12 +76,12 @@ class FakeAudioContext {
   async resume() {}
 }
 
-function setup(over: Partial<RecorderEnv> & { getUserMedia?: () => Promise<unknown> } = {}) {
+function setup(over: Partial<RecorderEnv> & { getUserMedia?: () => Promise<unknown>; persistence?: MemoryPersistence } = {}) {
   let clock = 0;
   const store = new Map<string, string>();
   const revoked: string[] = [];
   const stream = new FakeStream();
-  const { getUserMedia, ...envOver } = over;
+  const { getUserMedia, persistence, ...envOver } = over;
   const env: Partial<RecorderEnv> = {
     secure: true,
     mediaDevices: {
@@ -101,7 +102,7 @@ function setup(over: Partial<RecorderEnv> & { getUserMedia?: () => Promise<unkno
     win: null,
     ...envOver,
   };
-  const rec = new AudioRecorder({ filenamePrefix: 'CR-2026-00421_witness-deposition', warnAfterMs: 60_000 }, env);
+  const rec = new AudioRecorder({ filenamePrefix: 'CR-2026-00421_witness-deposition', warnAfterMs: 60_000, persistence }, env);
   return { rec, stream, store, revoked, env, advance: (ms: number) => (clock += ms) };
 }
 
@@ -208,7 +209,7 @@ describe('AudioRecorder', () => {
     }
     expect(rec.getState().recordings).toHaveLength(3);
     const first = rec.getState().recordings[0]!;
-    rec.discard(first.id);
+    await rec.discard(first.id);
     expect(rec.getState().recordings).toHaveLength(2);
     expect(revoked).toContain(first.url);
   });
@@ -267,5 +268,75 @@ describe('AudioRecorder', () => {
     const after = new AudioRecorder({ filenamePrefix: 'x', warnAfterMs: 1 }, env);
     expect(after.getState().status).toBe('idle');
     expect(after.getState().notice).toMatch(/could not be recovered/);
+  });
+
+  describe('browser persistence', () => {
+    const reopen = (env: Partial<RecorderEnv>, persistence: MemoryPersistence) => new AudioRecorder({ filenamePrefix: 'x', warnAfterMs: 60_000, persistence }, env);
+
+    it('keeps a finished recording across a reload until it is discarded', async () => {
+      const persistence = new MemoryPersistence();
+      const { rec, env } = setup({ persistence });
+      await rec.ready;
+      await rec.start();
+      lastRecorder()!.emit(300);
+      rec.stop();
+      await flush();
+      await flush();
+      expect(persistence.recordings.size).toBe(1);
+      expect(persistence.chunks.size).toBe(0); // chunk backup cleared once the file is saved
+
+      const after = reopen(env, persistence); // simulated page reload
+      await after.ready;
+      const restored = after.getState().recordings;
+      expect(restored).toHaveLength(1);
+      expect(restored[0]!.size).toBe(400);
+      expect(restored[0]!.downloaded).toBe(false);
+      expect(after.getState().notice).toMatch(/not been downloaded yet was restored/);
+      expect(after.hasUndownloaded()).toBe(true);
+
+      after.markDownloaded(restored[0]!.id);
+      await flush();
+      expect(persistence.recordings.get(restored[0]!.id)!.downloaded).toBe(true);
+      expect(after.hasUndownloaded()).toBe(false);
+
+      await after.discard(restored[0]!.id);
+      expect(persistence.recordings.size).toBe(0);
+      expect(after.getState().recordings).toHaveLength(0);
+    });
+
+    it('recovers a recording interrupted by a reload from its backed-up chunks', async () => {
+      const persistence = new MemoryPersistence();
+      const { rec, env } = setup({ persistence });
+      await rec.ready;
+      await rec.start();
+      lastRecorder()!.emit(500);
+      lastRecorder()!.emit(500);
+      lastRecorder()!.emit(500);
+      await flush();
+      // The page goes away mid-recording: no stop, no finalize.
+      const after = reopen(env, persistence);
+      await after.ready;
+      const [r] = after.getState().recordings;
+      expect(r!.endedBy).toBe('interrupted');
+      expect(r!.size).toBe(1_500);
+      expect(r!.approximateDuration).toBe(true);
+      expect(r!.durationMs).toBe(3_000);
+      expect(after.getState().notice).toMatch(/Recovered a recording/);
+      expect(after.getState().status).toBe('idle'); // never restarts recording
+      expect(persistence.chunks.size).toBe(0);
+    });
+
+    it('says plainly when the backup could not be saved', async () => {
+      const persistence = new MemoryPersistence();
+      persistence.failSaves = true;
+      const { rec } = setup({ persistence });
+      await rec.ready;
+      await rec.start();
+      rec.stop();
+      await flush();
+      await flush();
+      expect(rec.getState().storageError).toMatch(/could not be saved/);
+      expect(rec.getState().recordings[0]!.storage).toBe('memory-only');
+    });
   });
 });
