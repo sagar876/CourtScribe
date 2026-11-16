@@ -2,12 +2,13 @@ import type { TranscriptSegment } from '../../../shared/transcript.ts';
 
 /** The string a segment is searched by (speaker + text), normalised once. */
 export function searchKey(s: Pick<TranscriptSegment, 'speakerName' | 'text'>): string {
-  return `${s.speakerName}\n${s.text}`.toLocaleLowerCase();
+  // toLowerCase (not toLocaleLowerCase): locale-independent and markedly faster over 100K keys.
+  return `${s.speakerName}\n${s.text}`.toLowerCase();
 }
 
 /** Substring search over pre-normalised keys; returns ascending match indices. */
 export function searchKeys(keys: readonly string[], query: string): Int32Array {
-  const q = query.trim().toLocaleLowerCase();
+  const q = query.trim().toLowerCase();
   if (!q) return new Int32Array(0);
   const hits: number[] = [];
   for (let i = 0; i < keys.length; i++) if ((keys[i] as string).includes(q)) hits.push(i);

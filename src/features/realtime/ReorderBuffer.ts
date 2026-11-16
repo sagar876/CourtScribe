@@ -46,7 +46,8 @@ export class ReorderBuffer<T> {
     if (this.pending.has(seq)) return 'duplicate';
     if (seq < this.maxSeen) this.outOfOrder++;
     else this.maxSeen = seq;
-    if (seq > this.nextSeq && this.pending.size === 0) this.oldestPendingAt = now;
+    // Any arrival ahead of the expected seq may be waiting on a gap; the clock starts at the earliest one.
+    if (seq > this.nextSeq && now < this.oldestPendingAt) this.oldestPendingAt = now;
     this.pending.set(seq, { item, at: now });
     return 'accepted';
   }
@@ -55,27 +56,34 @@ export class ReorderBuffer<T> {
     const ready: T[] = [];
     let skipped = 0;
     for (;;) {
+      let released = false;
       let entry = this.pending.get(this.nextSeq);
       while (entry) {
         ready.push(entry.item);
         this.pending.delete(this.nextSeq);
         this.nextSeq++;
+        released = true;
         entry = this.pending.get(this.nextSeq);
       }
       if (this.pending.size === 0) {
         this.oldestPendingAt = Infinity;
         break;
       }
+      if (released) this.oldestPendingAt = this.oldestWaiting();
       const gapExpired = now - this.oldestPendingAt >= this.gapTimeoutMs;
       if (!gapExpired && this.pending.size <= this.maxPending) break;
       let min = Infinity;
       for (const seq of this.pending.keys()) if (seq < min) min = seq;
       skipped += min - this.nextSeq;
       this.nextSeq = min;
-      let oldestAt = Infinity;
-      for (const v of this.pending.values()) if (v.at < oldestAt) oldestAt = v.at;
-      this.oldestPendingAt = oldestAt;
+      this.oldestPendingAt = this.oldestWaiting();
     }
     return { ready, skipped };
+  }
+
+  private oldestWaiting(): number {
+    let oldest = Infinity;
+    for (const v of this.pending.values()) if (v.at < oldest) oldest = v.at;
+    return oldest;
   }
 }

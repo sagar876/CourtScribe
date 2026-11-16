@@ -16,6 +16,7 @@ export interface LiveSnapshot {
   state: ConnectionState;
   sessionId: string | null;
   lastError: string | null;
+  sessionRestarted: boolean;
   windowMs: number;
   // Throughput (browser-measured)
   incomingPerSecond: number;
@@ -61,9 +62,9 @@ export interface LiveSnapshot {
   server: ServerStats | null;
 }
 
-function toSegment(e: TranscriptEvent): TranscriptSegment {
+export function toSegment(e: TranscriptEvent, idPrefix = ''): TranscriptSegment {
   return {
-    id: e.segmentId,
+    id: idPrefix + e.segmentId,
     speakerId: e.speakerId,
     speakerName: SPEAKERS[e.speakerId],
     text: e.text,
@@ -90,13 +91,25 @@ class LiveSession {
   private timer: ReturnType<typeof setInterval> | null = null;
   private releaseTimer: (() => void) | null = null;
   private snapshot: LiveSnapshot;
+  /** Set when the server came back as a new session and the transcript was restarted. */
+  private sessionRestarted = false;
 
   constructor(url: string) {
     this.renderLatency = new RenderLatencyTracker(this.store);
     this.pipeline = new EventPipeline((batch) => this.apply(batch));
     this.connection = new ConnectionManager(url, {
       onEvent: (event, receivedAt) => this.pipeline.ingest(event, receivedAt),
-      onHello: (hello) => this.pipeline.startSession(hello.startSeq, this.connection.s.sessionId === hello.sessionId, hello.unrecoverable),
+      onHello: (hello) => {
+        const previous = this.connection.s.sessionId;
+        const sameSession = previous === hello.sessionId;
+        // The server restarted: its sequence numbers, segment ids and timeline start over. Mixing two
+        // sessions in one transcript would overwrite segments and break time ordering, so start fresh.
+        if (previous !== null && !sameSession) {
+          this.store.clear();
+          this.sessionRestarted = true;
+        }
+        return this.pipeline.startSession(hello.startSeq, sameSession, hello.unrecoverable);
+      },
     });
     this.pipeline.onProgress((seq) => this.connection.setProcessedSeq(seq));
     this.connection.onStateChange(() => this.publish());
@@ -153,7 +166,11 @@ class LiveSession {
     this.renderLatency.reset();
     this.publish();
   };
-  clearTranscript = () => this.store.clear();
+  clearTranscript = () => {
+    this.store.clear();
+    this.sessionRestarted = false;
+    this.publish();
+  };
 
   // ---------- snapshot ----------
   subscribe = (l: () => void) => {
@@ -181,6 +198,7 @@ class LiveSession {
       state: s.state,
       sessionId: s.sessionId,
       lastError: s.lastError,
+      sessionRestarted: this.sessionRestarted,
       windowMs: p.windowMs,
       incomingPerSecond: p.inMeter.perSecond,
       processedPerSecond: p.outMeter.perSecond,
@@ -223,10 +241,10 @@ class LiveSession {
   }
 }
 
-const url = import.meta.env.VITE_STREAM_URL ?? `ws://${location.hostname}:${STREAM_PORT}`;
+export const STREAM_URL = import.meta.env.VITE_STREAM_URL ?? `ws://${location.hostname}:${STREAM_PORT}`;
 
 /** App-wide singleton — a plain object, not React context. */
-export const live = new LiveSession(url);
+export const live = new LiveSession(STREAM_URL);
 export const liveTranscript = live.store;
 
 export function useLiveSnapshot(): LiveSnapshot {

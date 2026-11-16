@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { trackResource } from '../../lib/resources.ts';
 import type { TranscriptStore } from './TranscriptStore.ts';
 import { searchKey, searchKeys } from './searchCore.ts';
@@ -38,8 +38,6 @@ export function useTranscriptSearch(store: TranscriptStore, engine: SearchEngine
   const reqId = useRef(0);
   const sentAt = useRef(new Map<number, number>());
   const queryRef = useRef(query);
-  queryRef.current = query;
-
   const run = useRef<(q: string) => void>(() => {});
 
   // Worker lifecycle + index sync.
@@ -61,6 +59,7 @@ export function useTranscriptSearch(store: TranscriptStore, engine: SearchEngine
     };
 
     const offReset = store.onReset(() => post({ type: 'load', keys: keysFrom(store) }));
+    const inFlight = sentAt.current;
     const offAppend = store.onAppend((added) => post({ type: 'append', keys: added.map(searchKey) }));
     const offUpdate = store.onUpdate((updates) => post({ type: 'update', updates: updates.map((u) => [u.index, searchKey(u.segment)]) }));
 
@@ -70,12 +69,29 @@ export function useTranscriptSearch(store: TranscriptStore, engine: SearchEngine
       offUpdate();
       worker.terminate();
       workerRef.current = null;
-      sentAt.current.clear();
+      inFlight.clear();
       release();
     };
   }, [store, engine]);
 
-  run.current = (q: string) => {
+  // Latest-value refs, updated after render (never during it) so timers and listeners see fresh values.
+  useLayoutEffect(() => {
+    queryRef.current = query;
+    run.current = runSearch;
+  });
+
+  // A reset (dataset switch, cleared live transcript) invalidates match indices.
+  useEffect(
+    () =>
+      store.onReset(() => {
+        reqId.current++;
+        setPending(false);
+        setResult(null);
+      }),
+    [store],
+  );
+
+  function runSearch(q: string) {
     const id = ++reqId.current;
     if (!q.trim()) {
       setPending(false);
@@ -93,7 +109,7 @@ export function useTranscriptSearch(store: TranscriptStore, engine: SearchEngine
       const ms = performance.now() - t0;
       setResult({ query: q, matches, computeMs: ms, totalMs: ms, engine });
     }
-  };
+  }
 
   // Debounced search on query / engine / dataset change.
   useEffect(() => {

@@ -21,6 +21,7 @@ export class TranscriptStore {
   private updateListeners = new Set<UpdateListener>();
   private commitListeners = new Set<CommitListener>();
   private views = 0;
+  private viewListeners = new Set<(views: number) => void>();
   private version = 0;
   private listeners = new Set<Listener>();
   private appendListeners = new Set<AppendListener>();
@@ -45,6 +46,11 @@ export class TranscriptStore {
 
   get(id: string): TranscriptSegment | undefined {
     return this.byId.get(id);
+  }
+
+  /** Position of a segment by id (O(1)); -1 when absent. */
+  indexOf(id: string): number {
+    return this.indexById.get(id) ?? -1;
   }
 
   /** Replace everything (dataset switch). */
@@ -154,11 +160,19 @@ export class TranscriptStore {
   /** Mounted list views; render latency is only measured while one exists. */
   attachView(): () => void {
     this.views++;
+    for (const l of this.viewListeners) l(this.views);
     let attached = true;
     return () => {
-      if (attached) this.views--;
+      if (!attached) return;
       attached = false;
+      this.views--;
+      for (const l of this.viewListeners) l(this.views);
     };
+  }
+
+  onViewsChange(l: (views: number) => void): () => void {
+    this.viewListeners.add(l);
+    return () => this.viewListeners.delete(l);
   }
 
   get viewCount(): number {

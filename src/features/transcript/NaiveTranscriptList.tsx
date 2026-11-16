@@ -1,14 +1,14 @@
 import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
 import { TranscriptRowView } from './TranscriptRow.tsx';
 import { containsSorted } from './searchCore.ts';
-import type { TranscriptListProps } from './listTypes.ts';
+import { getNoActive, noopSubscribe, type TranscriptListProps } from './listTypes.ts';
 
 /**
  * Deliberately naive baseline for comparison: every segment is mounted, rows
  * are not memoised and receive fresh callbacks, so any state change re-renders
  * the whole list. Capped by the caller to keep the tab usable.
  */
-export function NaiveTranscriptList({ store, live, activeIndex, selectedId, matches, currentMatchRow, query, onSelect, stats, ref }: TranscriptListProps) {
+export function NaiveTranscriptList({ store, live, activeIndex, selectedId, matches, currentMatchRow, query, onSelect, stats, playback, ref }: TranscriptListProps) {
   const version = useSyncExternalStore(store.subscribe, store.getVersion);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -27,7 +27,9 @@ export function NaiveTranscriptList({ store, live, activeIndex, selectedId, matc
     element: () => scrollRef.current,
   }));
 
-  const effectiveActive = activeIndex >= 0 ? activeIndex : live ? store.size - 1 : -1;
+  const playbackActiveId = useSyncExternalStore(playback?.subscribeActive ?? noopSubscribe, playback?.getActiveId ?? getNoActive);
+  const playbackIndex = playbackActiveId ? store.indexOf(playbackActiveId) : -1;
+  const effectiveActive = playbackIndex >= 0 ? playbackIndex : activeIndex >= 0 ? activeIndex : live ? store.size - 1 : -1;
   const rows = [];
   for (let i = 0; i < store.size; i++) {
     const segment = store.at(i)!;

@@ -16,6 +16,11 @@ import { expandSegment, type EventDraft } from '../shared/transcriptEvents.ts';
 const BUFFER_CAPACITY = 50_000;
 const MAX_BURST = 20_000;
 const TICK_MS = 10;
+const PORT = Number(process.env.STREAM_PORT) || STREAM_PORT;
+/** A client whose socket buffer exceeds this is too slow to keep up: drop it so it resumes from its last ACK. */
+const MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
+/** Resume state for clients that have been gone this long is forgotten (bounded memory). */
+const CLIENT_STATE_TTL_MS = 10 * 60_000;
 
 interface StoredEvent extends EventDraft {
   eventId: string;
@@ -38,6 +43,7 @@ let segmentCounter = 0;
 let pendingDrafts: EventDraft[] = [];
 const ring: (StoredEvent | undefined)[] = new Array(BUFFER_CAPACITY);
 const lastAckByClient = new Map<string, number>();
+const forgetTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const clients = new Set<ClientState>();
 
 const config: ServerConfig = { running: false, rate: 50, duplicateRate: 0, reorderRate: 0 };
@@ -59,7 +65,8 @@ function generate(): StoredEvent {
   if (pendingDrafts.length === 0) pendingDrafts = expandSegment(generator.next(++segmentCounter), partialRng);
   const draft = pendingDrafts.shift() as EventDraft;
   const seq = ++headSeq;
-  const ev: StoredEvent = { ...draft, eventId: `${sessionId}:${seq}`, sequenceNumber: seq };
+  // Segment ids are unique per server session so a restarted server can never collide with an earlier one.
+  const ev: StoredEvent = { ...draft, segmentId: `${sessionId}-${draft.segmentId}`, eventId: `${sessionId}:${seq}`, sequenceNumber: seq };
   ring[seq % BUFFER_CAPACITY] = ev;
   generatedTotal++;
   return ev;
@@ -70,6 +77,12 @@ function send(ws: WebSocket, msg: ServerMessage): void {
 }
 
 function writeEvent(c: ClientState, ev: StoredEvent, replay: boolean): void {
+  if (c.ws.bufferedAmount > MAX_BUFFERED_BYTES) {
+    // Backpressure: never buffer unboundedly for a stalled client (e.g. a backgrounded tab).
+    c.live = false;
+    c.ws.terminate();
+    return;
+  }
   const event: TranscriptEvent = { ...ev, timestamp: Date.now(), replay };
   send(c.ws, { type: 'event', event });
   c.sent++;
@@ -127,6 +140,11 @@ function tick(): void {
 
 function handleHello(c: ClientState, clientId: string): void {
   c.clientId = clientId;
+  const forget = forgetTimers.get(clientId);
+  if (forget) {
+    clearTimeout(forget);
+    forgetTimers.delete(clientId);
+  }
   const lastAck = lastAckByClient.get(clientId);
   const resumed = lastAck !== undefined;
   let startSeq = headSeq + 1;
@@ -214,9 +232,7 @@ function broadcastStats(): void {
   }
 }
 
-const wss = new WebSocketServer({ port: STREAM_PORT });
-
-wss.on('connection', (ws) => {
+function onConnection(ws: WebSocket): void {
   const c: ClientState = { ws, clientId: null, live: false, sent: 0, held: null };
   clients.add(c);
   ws.on('message', (raw) => {
@@ -226,9 +242,47 @@ wss.on('connection', (ws) => {
       // Ignore malformed frames; this is a local POC server.
     }
   });
-  ws.on('close', () => clients.delete(c));
-  ws.on('error', () => clients.delete(c));
-});
+  const drop = () => {
+    if (!clients.delete(c) || !c.clientId) return;
+    const id = c.clientId;
+    if ([...clients].some((other) => other.clientId === id)) return;
+    clearTimeout(forgetTimers.get(id));
+    forgetTimers.set(
+      id,
+      setTimeout(() => {
+        forgetTimers.delete(id);
+        lastAckByClient.delete(id);
+      }, CLIENT_STATE_TTL_MS),
+    );
+  };
+  ws.on('close', drop);
+  ws.on('error', drop);
+}
+
+let wss: WebSocketServer | null = null;
+
+/**
+ * Bind with a short retry: under `tsx watch` the previous process can still
+ * hold the port for a moment during a restart.
+ */
+function listen(attempt = 0): void {
+  const server = new WebSocketServer({ port: PORT });
+  server.on('connection', onConnection);
+  server.on('listening', () => {
+    wss = server;
+    console.log(`[stream] CourtScribe stream server on ws://localhost:${PORT} (session ${sessionId})`);
+  });
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE' && attempt < 20) {
+      server.close();
+      setTimeout(() => listen(attempt + 1), 250);
+      return;
+    }
+    console.error(`[stream] cannot listen on port ${PORT}: ${err.message}`);
+    process.exit(1);
+  });
+}
+listen();
 
 const tickTimer = setInterval(tick, TICK_MS);
 const statsTimer = setInterval(() => {
@@ -237,15 +291,15 @@ const statsTimer = setInterval(() => {
   broadcastStats();
 }, 1000);
 
-wss.on('listening', () => {
-  console.log(`[stream] CourtScribe stream server on ws://localhost:${STREAM_PORT} (session ${sessionId})`);
-});
-
 function shutdown(): void {
   clearInterval(tickTimer);
   clearInterval(statsTimer);
+  for (const t of forgetTimers.values()) clearTimeout(t);
   for (const c of clients) c.ws.terminate();
-  wss.close(() => process.exit(0));
+  // Exit even if close stalls, so a watch restart can rebind the port promptly.
+  setTimeout(() => process.exit(0), 500).unref();
+  if (wss) wss.close(() => process.exit(0));
+  else process.exit(0);
 }
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);

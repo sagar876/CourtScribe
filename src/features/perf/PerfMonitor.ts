@@ -46,7 +46,9 @@ export class PerfMonitor {
   private secBlocking = 0;
   private startedAt = 0;
 
-  constructor(private readonly sampleExtra: () => Record<string, number | null> = () => ({})) {
+  private sampleExtra: () => Record<string, number | null> = () => ({});
+
+  constructor() {
     const longtask = typeof PerformanceObserver !== 'undefined' && PerformanceObserver.supportedEntryTypes?.includes('longtask');
     this.state = {
       history: [],
@@ -54,6 +56,10 @@ export class PerfMonitor {
       totals: { longTasks: 0, blockingMs: 0, maxLongTaskMs: 0 },
       supported: { longtask: Boolean(longtask), memory: readHeapMB() !== null },
     };
+  }
+
+  setSampler(fn: () => Record<string, number | null>): void {
+    this.sampleExtra = fn;
   }
 
   start(): void {
@@ -119,6 +125,7 @@ export class PerfMonitor {
   stop(): void {
     for (const d of this.disposers.splice(0)) d();
   }
+
 
   resetTotals(): void {
     this.state = { ...this.state, totals: { longTasks: 0, blockingMs: 0, maxLongTaskMs: 0 } };

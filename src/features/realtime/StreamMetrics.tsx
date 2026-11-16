@@ -2,6 +2,7 @@ import { Button } from '../../components/ui/Button.tsx';
 import { MetricTile } from '../../components/ui/MetricTile.tsx';
 import { SourceBadge } from '../../components/ui/SourceBadge.tsx';
 import { formatMs, formatNumber } from '../../lib/format.ts';
+import { useMonitorCommit } from '../perf/monitorRenders.ts';
 import { live, QUEUE_CAPACITY, useLiveSnapshot } from './liveSession.ts';
 
 function Section({ title, source, children, note }: { title: string; source: 'browser' | 'server'; children: React.ReactNode; note?: string }) {
@@ -18,6 +19,7 @@ function Section({ title, source, children, note }: { title: string; source: 'br
 }
 
 export function StreamMetrics() {
+  useMonitorCommit();
   const s = useLiveSnapshot();
   const srv = s.server;
   const you = srv?.you;

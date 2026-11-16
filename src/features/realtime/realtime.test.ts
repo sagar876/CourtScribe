@@ -80,3 +80,14 @@ describe('backoff', () => {
     expect(backoffDelay(3, opts, () => 0.999999)).toBeLessThanOrEqual(800);
   });
 });
+
+describe('ReorderBuffer gap timing with batched pushes', () => {
+  it('starts the gap clock even when the gap appears inside one batch', () => {
+    const r = new ReorderBuffer<number>(1, 100);
+    r.push(1, 1, 0); // both pushed before any drain (one batch)
+    r.push(3, 3, 0);
+    expect(r.drain(0)).toEqual({ ready: [1], skipped: 0 });
+    expect(r.drain(99).ready).toEqual([]);
+    expect(r.drain(100)).toEqual({ ready: [3], skipped: 1 });
+  });
+});

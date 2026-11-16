@@ -13,10 +13,18 @@ export class RenderLatencyTracker {
   private pending: { version: number; receivedAt: number[] }[] = [];
   readonly samples = new SampleWindow(4_000);
   unmeasured = 0;
-  private off: () => void;
+  private offCommit: () => void;
+  private offViews: () => void;
 
   constructor(private readonly store: TranscriptStore) {
-    this.off = store.onCommit((version) => this.committed(version));
+    this.offCommit = store.onCommit((version) => this.committed(version));
+    // When the last view unmounts, batches still waiting for a commit can never be measured
+    // honestly — flushing them on a later remount would record seconds of fake latency.
+    this.offViews = store.onViewsChange((views) => {
+      if (views > 0) return;
+      for (const p of this.pending) this.unmeasured += p.receivedAt.length;
+      this.pending = [];
+    });
   }
 
   /** Call right after the batch has been applied to the store. */
@@ -45,6 +53,7 @@ export class RenderLatencyTracker {
   }
 
   dispose(): void {
-    this.off();
+    this.offCommit();
+    this.offViews();
   }
 }

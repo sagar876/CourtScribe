@@ -2,7 +2,11 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { useId } from 'react';
 import { cn } from '../../lib/cn.ts';
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
+/**
+ * primary — the main action in a group · secondary — other actions · ghost — low-emphasis inline actions
+ * danger — destructive/disruptive (outlined) · record — start audio capture (solid red)
+ */
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'record';
 type Size = 'sm' | 'md';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -17,10 +21,12 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variants: Record<Variant, string> = {
-  primary: 'bg-navy-900 text-white hover:bg-navy-800 border border-navy-900',
-  secondary: 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-300',
-  ghost: 'bg-transparent text-slate-600 hover:bg-slate-100 border border-transparent',
-  danger: 'bg-white text-red-700 hover:bg-red-50 border border-red-200',
+  // Hover only applies to enabled buttons (`enabled:`), so it never fights the disabled style.
+  primary: 'border border-navy-900 bg-navy-900 text-white enabled:hover:bg-navy-800',
+  secondary: 'border border-slate-300 bg-white text-slate-800 enabled:hover:bg-slate-50',
+  ghost: 'border border-transparent bg-transparent text-slate-700 enabled:hover:bg-slate-100',
+  danger: 'border border-red-300 bg-white text-red-700 enabled:hover:bg-red-50',
+  record: 'border border-red-700 bg-red-700 text-white enabled:hover:bg-red-800',
 };
 
 const sizes: Record<Size, string> = {
@@ -40,10 +46,11 @@ export function Button({ variant = 'secondary', size = 'md', icon, unavailableRe
         aria-describedby={unavailableReason ? reasonId : undefined}
         className={cn(
           'inline-flex shrink-0 items-center justify-center rounded-md font-medium whitespace-nowrap transition-colors',
-          'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-inherit',
-          unavailableReason && 'border-dashed',
           variants[variant],
           sizes[size],
+          // Disabled = explicit readable colours (not faded opacity) + not-allowed cursor; unavailable features also get a dashed border.
+          'disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-500',
+          unavailableReason && 'border-dashed disabled:border-slate-300',
           className,
         )}
         {...rest}

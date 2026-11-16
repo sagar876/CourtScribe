@@ -1,18 +1,20 @@
-import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Icon } from '../../components/ui/Icon.tsx';
 import { TranscriptRow } from './TranscriptRow.tsx';
 import { containsSorted } from './searchCore.ts';
-import type { TranscriptListProps } from './listTypes.ts';
+import { getNoActive, noopSubscribe, type TranscriptListProps } from './listTypes.ts';
 
 const FOLLOW_THRESHOLD_PX = 80;
+/** After the reader scrolls by hand, playback won't move the list for this long. */
+const USER_SCROLL_GRACE_MS = 4_000;
 
 /**
  * Virtualised transcript list. Only visible rows (+ overscan) are mounted.
  * When live: follows new segments while the reader is at the bottom; once the
  * reader scrolls up, the position is held and new arrivals are counted instead.
  */
-export function VirtualTranscriptList({ store, live, activeIndex, selectedId, matches, currentMatchRow, query, onSelect, stats, ref }: TranscriptListProps) {
+export function VirtualTranscriptList({ store, live, activeIndex, selectedId, matches, currentMatchRow, query, onSelect, stats, playback, ref }: TranscriptListProps) {
   const version = useSyncExternalStore(store.subscribe, store.getVersion);
   const count = store.size;
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -51,12 +53,15 @@ export function VirtualTranscriptList({ store, live, activeIndex, selectedId, ma
     if (followingRef.current && live && count > 0) virtualizer.scrollToIndex(count - 1, { align: 'end' });
   }, [version, count, live, virtualizer]);
 
-  const setFollow = (next: boolean) => {
-    if (next === followingRef.current) return;
-    followingRef.current = next;
-    setFollowing(next);
-    if (!next) setUnfollowedAt(store.size);
-  };
+  const setFollow = useCallback(
+    (next: boolean) => {
+      if (next === followingRef.current) return;
+      followingRef.current = next;
+      setFollowing(next);
+      if (!next) setUnfollowedAt(store.size);
+    },
+    [store],
+  );
 
   useImperativeHandle(
     ref,
@@ -67,7 +72,7 @@ export function VirtualTranscriptList({ store, live, activeIndex, selectedId, ma
       },
       element: () => scrollRef.current,
     }),
-    [virtualizer],
+    [virtualizer, setFollow],
   );
 
   const onScroll = () => {
@@ -82,12 +87,39 @@ export function VirtualTranscriptList({ store, live, activeIndex, selectedId, ma
     virtualizer.scrollToIndex(count - 1, { align: 'end' });
   };
 
-  const effectiveActive = activeIndex >= 0 ? activeIndex : live && following ? count - 1 : -1;
+  // Playback-driven active segment: this component re-renders only when the id changes.
+  const playbackActiveId = useSyncExternalStore(playback?.subscribeActive ?? noopSubscribe, playback?.getActiveId ?? getNoActive);
+  const playbackIndex = playbackActiveId ? store.indexOf(playbackActiveId) : -1;
+  const lastUserScroll = useRef(0);
+  const markUserScroll = () => {
+    lastUserScroll.current = performance.now();
+  };
+
+  // Bring the active segment into view — unless it is already visible or the reader recently scrolled by hand.
+  useEffect(() => {
+    if (playbackIndex < 0 || performance.now() - lastUserScroll.current < USER_SCROLL_GRACE_MS) return;
+    const el = scrollRef.current;
+    const item = virtualizer.getVirtualItems().find((vi) => vi.index === playbackIndex);
+    if (el && item && item.start >= el.scrollTop && item.end <= el.scrollTop + el.clientHeight) return;
+    setFollow(false);
+    virtualizer.scrollToIndex(playbackIndex, { align: 'center' });
+    // Only reacts to active changes, not to every list render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playbackIndex]);
+
+  const effectiveActive = playbackIndex >= 0 ? playbackIndex : activeIndex >= 0 ? activeIndex : live && following ? count - 1 : -1;
   const items = virtualizer.getVirtualItems();
 
   return (
     <div className="relative h-full">
-      <div ref={scrollRef} onScroll={onScroll} role="listbox" aria-label="Transcript" className="h-full overflow-auto overscroll-contain [contain:strict]">
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        onWheel={markUserScroll}
+        onTouchMove={markUserScroll}
+        onPointerDown={markUserScroll}
+        onKeyDown={markUserScroll}
+        role="listbox" aria-label="Transcript" className="h-full overflow-auto overscroll-contain [contain:strict]">
         <div style={{ height: virtualizer.getTotalSize(), position: 'relative', width: '100%' }}>
           {items.map((vi) => {
             const segment = store.at(vi.index);

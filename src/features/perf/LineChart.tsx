@@ -63,7 +63,12 @@ export function LineChart({ data, colors, height = 180, unit = '', ariaLabel }: 
     chart.current?.changeData(data);
   }, [data]);
 
-  return <div ref={el} role="img" aria-label={ariaLabel} style={{ height }} />;
+  // G2Plot takes over its container (and drops attributes on it), so the accessible name lives on a wrapper.
+  return (
+    <div role="img" aria-label={ariaLabel}>
+      <div ref={el} style={{ height }} />
+    </div>
+  );
 }
 
 /** Keeps a charting failure contained to its panel instead of unmounting the page. */

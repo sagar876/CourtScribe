@@ -21,16 +21,17 @@ const valueTone = {
 
 export function MetricTile({ label, value, unit, hint, source, tone = 'default', className }: MetricTileProps) {
   return (
-    <div className={cn('flex min-w-0 flex-col rounded-md border border-slate-200 bg-white px-3 py-2.5', className)}>
-      <div className="flex items-start justify-between gap-2">
-        <span className="truncate text-[11px] font-medium tracking-wide text-slate-500 uppercase">{label}</span>
+    <div data-metric={label} className={cn('flex min-w-0 flex-col rounded-md border border-slate-200 bg-white px-3 py-2.5', className)}>
+      {/* Whole words only: when space runs out the badge wraps to its own line instead of splitting the label. */}
+      <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
+        <span className="text-[11px] leading-tight font-medium tracking-wide text-slate-600 uppercase">{label}</span>
         {source && <SourceBadge source={source} compact />}
       </div>
       <div className="mt-1 flex items-baseline gap-1">
         <span className={cn('tabular font-mono text-lg font-medium', valueTone[tone])}>{value}</span>
         {unit && <span className="text-xs text-slate-500">{unit}</span>}
       </div>
-      {hint && <div className="mt-0.5 truncate text-[11px] text-slate-500">{hint}</div>}
+      {hint && <div className="mt-0.5 line-clamp-2 text-[11px] text-slate-500" title={typeof hint === 'string' ? hint : undefined}>{hint}</div>}
     </div>
   );
 }

@@ -17,7 +17,8 @@ describe('EventPipeline', () => {
   let batches: Queued[][];
   let pipeline: EventPipeline;
   beforeEach(() => {
-    vi.useFakeTimers();
+    // The pipeline's clock is performance.now(); fake it so gap timeouts follow test time.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance'] });
     batches = [];
     pipeline = new EventPipeline((b) => batches.push(b), { ...DEFAULT_PIPELINE, windowMs: 50, queueCapacity: 4 });
     pipeline.startSession(1, false, 0);
@@ -60,6 +61,38 @@ describe('EventPipeline', () => {
     for (let i = 1; i <= 6; i++) pipeline.ingest(ev(i), 0);
     expect(pipeline.queueDepth).toBe(4);
     expect(pipeline.c.queueDropped).toBe(2);
+  });
+
+  it('drains a backlog in bounded batches, yielding between them', () => {
+    const p = new EventPipeline((b) => batches.push(b), { ...DEFAULT_PIPELINE, windowMs: 50, maxBatch: 3, queueCapacity: 100 });
+    p.startSession(1, false, 0);
+    for (let i = 1; i <= 7; i++) p.ingest(ev(i), 0);
+    vi.advanceTimersByTime(50);
+    expect(batches.map((b) => b.length)).toEqual([3]); // first window: one bounded batch
+    vi.runOnlyPendingTimers(); // the follow-up setTimeout(0) — yields to the event loop between batches
+    vi.runOnlyPendingTimers();
+    expect(batches.map((b) => b.length)).toEqual([3, 3, 1]); // rest drained on the following ticks
+    expect(batches.flat().map((q) => q.event.sequenceNumber)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  });
+
+  it('applies a changed batching window to the next batch', () => {
+    pipeline.setWindow(200);
+    pipeline.ingest(ev(1), 0);
+    vi.advanceTimersByTime(199);
+    expect(batches).toHaveLength(0);
+    vi.advanceTimersByTime(1);
+    expect(batches).toHaveLength(1);
+  });
+
+  it('releases a sequence gap after the timeout and counts it as dropped', () => {
+    pipeline.ingest(ev(1), 0);
+    pipeline.ingest(ev(3), 0); // seq 2 never arrives
+    vi.advanceTimersByTime(50);
+    expect(batches.flat().map((q) => q.event.sequenceNumber)).toEqual([1]);
+    vi.advanceTimersByTime(DEFAULT_PIPELINE.gapTimeoutMs);
+    pipeline.tick();
+    expect(batches.flat().map((q) => q.event.sequenceNumber)).toEqual([1, 3]);
+    expect(pipeline.c.gapsSkipped).toBe(1);
   });
 
   it('resumes without re-applying events at or below the watermark', () => {
@@ -105,6 +138,21 @@ describe('RenderLatencyTracker', () => {
     expect(tracker.samples.size).toBe(2);
     const [p50] = tracker.samples.percentiles(50);
     expect(p50).toBeGreaterThanOrEqual(10);
+  });
+});
+
+describe('RenderLatencyTracker after the view unmounts', () => {
+  it('does not record stale batches when a view mounts again later', () => {
+    const store = new TranscriptStore();
+    const tracker = new RenderLatencyTracker(store);
+    const detach = store.attachView();
+    store.append(generateTranscript(1));
+    tracker.expect([performance.now() - 5]);
+    detach(); // view gone before it committed that version
+    expect(tracker.unmeasured).toBe(1);
+    store.attachView();
+    store.markCommitted(store.getVersion());
+    expect(tracker.samples.size).toBe(0);
   });
 });
 

@@ -19,9 +19,9 @@ export interface TranscriptRowProps {
 }
 
 function highlightText(text: string, query: string): ReactNode {
-  const q = query.trim().toLocaleLowerCase();
+  const q = query.trim().toLowerCase();
   if (!q) return text;
-  const lower = text.toLocaleLowerCase();
+  const lower = text.toLowerCase();
   const parts: ReactNode[] = [];
   let from = 0;
   let at = lower.indexOf(q);

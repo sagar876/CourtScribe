@@ -32,6 +32,10 @@ export interface ConnectionSnapshot {
 }
 
 const ACK_INTERVAL_MS = 200;
+/** Socket opened but no hello within this time → treat as failed attempt. */
+export const HANDSHAKE_TIMEOUT_MS = 5_000;
+/** The server sends stats every second; this much silence means the socket is dead even without a close event. */
+export const STALE_CONNECTION_MS = 5_000;
 
 /**
  * Owns the WebSocket and nothing else: lifecycle, handshake/resume, ACKs,
@@ -48,6 +52,8 @@ export class ConnectionManager {
   private ackTimer: ReturnType<typeof setInterval> | null = null;
   private releaseAckTimer: (() => void) | null = null;
   private disconnectedAt: number | null = null;
+  private handshakeTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastFrameAt = 0;
   private processedSeq = 0;
   private listeners = new Set<() => void>();
 
@@ -81,6 +87,7 @@ export class ConnectionManager {
   disconnect(): void {
     this.wantConnected = false;
     this.clearRetry();
+    this.clearHandshake();
     this.s.offlineUntil = 0;
     this.closeSocket(1000, 'client disconnect');
     this.stopAcks();
@@ -144,8 +151,25 @@ export class ConnectionManager {
       return;
     }
     if (state === 'reconnecting') this.s.reconnectAttempts++;
-    const ws = new WebSocket(this.url);
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(this.url);
+    } catch (err) {
+      // e.g. a malformed URL: report it and keep retrying with backoff rather than throwing into the UI.
+      this.s.lastError = err instanceof Error ? err.message : String(err);
+      this.scheduleRetry();
+      return;
+    }
     this.ws = ws;
+    this.clearHandshake();
+    this.handshakeTimer = setTimeout(() => {
+      this.handshakeTimer = null;
+      if (this.ws !== ws) return;
+      this.closeSocket(4003, 'handshake timeout');
+      this.s.lastError = 'Server did not complete the handshake';
+      this.markDropped('Handshake timed out');
+      this.scheduleRetry();
+    }, HANDSHAKE_TIMEOUT_MS);
     this.releaseSocket = trackResource('websocket');
     ws.onopen = () => this.send({ type: 'hello', clientId: this.clientId });
     ws.onmessage = (e: MessageEvent<string>) => this.onFrame(e.data);
@@ -162,6 +186,7 @@ export class ConnectionManager {
 
   private onFrame(raw: string): void {
     const receivedAt = performance.now();
+    this.lastFrameAt = receivedAt;
     this.s.framesReceived++;
     this.s.bytesReceived += raw.length;
     let msg: ServerMessage;
@@ -176,7 +201,10 @@ export class ConnectionManager {
   }
 
   private onHello(hello: HelloMessage): void {
+    this.clearHandshake();
     const processed = this.handlers.onHello(hello);
+    // A different server session: the previous server's stats no longer describe anything.
+    if (this.s.sessionId !== hello.sessionId) this.s.server = null;
     this.s.sessionId = hello.sessionId;
     if (this.disconnectedAt !== null) {
       this.s.lastReconnectMs = Math.round(performance.now() - this.disconnectedAt);
@@ -197,7 +225,13 @@ export class ConnectionManager {
     }
   }
 
+  private clearHandshake(): void {
+    if (this.handshakeTimer) clearTimeout(this.handshakeTimer);
+    this.handshakeTimer = null;
+  }
+
   private markDropped(reason: string): void {
+    this.clearHandshake();
     if (this.s.state === 'connected' || this.s.state === 'syncing') {
       this.s.disconnects++;
       this.disconnectedAt = performance.now();
@@ -231,7 +265,14 @@ export class ConnectionManager {
   private startAcks(): void {
     if (this.ackTimer) return;
     this.ackTimer = setInterval(() => {
-      if ((this.s.state === 'connected' || this.s.state === 'syncing') && this.processedSeq > this.s.lastAckSent) {
+      const online = this.s.state === 'connected' || this.s.state === 'syncing';
+      if (online && performance.now() - this.lastFrameAt > STALE_CONNECTION_MS) {
+        this.closeSocket(4002, 'stale connection');
+        this.markDropped(`No data from server for ${STALE_CONNECTION_MS / 1000} s`);
+        this.scheduleRetry();
+        return;
+      }
+      if (online && this.processedSeq > this.s.lastAckSent) {
         this.send({ type: 'ack', seq: this.processedSeq });
         this.s.lastAckSent = this.processedSeq;
       }

@@ -3,6 +3,7 @@ import { Button } from '../../components/ui/Button.tsx';
 import { SegmentedControl } from '../../components/ui/SegmentedControl.tsx';
 import { SourceBadge } from '../../components/ui/SourceBadge.tsx';
 import { StatusIndicator } from '../../components/ui/StatusIndicator.tsx';
+import { useMonitorCommit } from '../perf/monitorRenders.ts';
 import { describeConnection } from './connectionStatus.ts';
 import { BATCH_WINDOWS, live, QUEUE_CAPACITY, useLiveSnapshot } from './liveSession.ts';
 
@@ -26,6 +27,7 @@ function Group({ title, children, badge }: { title: string; children: React.Reac
 }
 
 export function StreamControls() {
+  useMonitorCommit();
   const s = useLiveSnapshot();
   const conn = describeConnection(s);
   const online = s.state === 'connected' || s.state === 'syncing';
@@ -67,6 +69,7 @@ export function StreamControls() {
         </Button>
         <SegmentedControl<StreamRate>
           label="Rate (events/s)"
+          disabledHint="connect first"
           value={cfg?.rate ?? 50}
           options={STREAM_RATES.map((r) => ({ value: r, label: String(r), disabled: !online }))}
           onChange={(rate) => live.configureServer({ rate })}
@@ -92,12 +95,14 @@ export function StreamControls() {
       <Group title="Fault injection" badge={<SourceBadge source="server" compact />}>
         <SegmentedControl<number>
           label="Duplicates"
+          disabledHint="connect first"
           value={nearest(cfg?.duplicateRate)}
           options={CHAOS.map((o) => ({ ...o, disabled: !online }))}
           onChange={(duplicateRate) => live.configureServer({ duplicateRate })}
         />
         <SegmentedControl<number>
           label="Out-of-order"
+          disabledHint="connect first"
           value={nearest(cfg?.reorderRate)}
           options={CHAOS.map((o) => ({ ...o, disabled: !online }))}
           onChange={(reorderRate) => live.configureServer({ reorderRate })}
