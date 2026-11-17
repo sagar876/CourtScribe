@@ -41,7 +41,10 @@ const SPEECH_STATUS: Record<SpeechStatus, { tone: 'neutral' | 'info' | 'success'
   error: { tone: 'danger', label: 'Speech recognition stopped' },
 };
 
-/** Live Feed: microphone speech recognition and the server connection, with separate statuses. */
+/**
+ * Live Feed: one place to start/stop speech recognition. The feed connection is a single status line
+ * underneath (it connects automatically on Start Listening; local mode needs no server).
+ */
 function LiveFeedCard() {
   const s = useLiveSnapshot();
   const sp = useSpeechState();
@@ -49,111 +52,108 @@ function LiveFeedCard() {
   const status = SPEECH_STATUS[sp.status];
   const listening = sp.status === 'listening' || sp.status === 'restarting' || sp.status === 'requesting' || sp.status === 'stopping';
   const simulatorRunning = s.server?.config.running ?? false;
+  const serverMode = !s.localMode && !s.configError;
+  const feedLine = s.configError
+    ? s.configError
+    : s.localMode
+      ? 'Feed: local — processed in this browser (no Live Feed server configured)'
+      : `Feed: ${conn.label.toLowerCase()} — ${conn.detail}`;
   return (
     <Card
       title="Live Feed"
-      description="Speak into this device’s microphone: recognised words appear in the transcript below. Browser-based speech recognition (proof of concept) — not a production transcription engine, and speakers are not identified."
+      description="Press Start Listening and speak: recognised words appear in the transcript below. Browser-based speech recognition (proof of concept) — not a production transcription engine; speakers are not identified."
       className="h-full"
     >
-      <div className="flex flex-col gap-4" data-tour="live-feed">
-        <section aria-label="Speech recognition" className="flex flex-col gap-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <StatusIndicator tone={status.tone} label={status.label} pulse={sp.status === 'listening'} />
-            <LiveTranscriptStats />
-          </div>
-          {!sp.supported ? (
-            <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900" role="status">
-              {sp.unsupportedReason}
-            </p>
-          ) : (
-            <div className="flex flex-wrap items-end gap-2">
-              <label className="flex flex-col gap-1 text-[11px] font-medium tracking-wide text-slate-600 uppercase">
-                Recognition language
-                <select
-                  value={sp.lang}
-                  onChange={(e) => speech.setLang(e.target.value)}
-                  disabled={listening}
-                  className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm font-normal tracking-normal text-slate-800 normal-case disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-600"
-                >
-                  {SPEECH_LANGUAGES.map((l) => (
-                    <option key={l.value} value={l.value}>
-                      {l.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {listening ? (
-                <Button variant="primary" onClick={speech.stop} disabled={sp.status === 'stopping'}>
-                  ■ Stop Listening
-                </Button>
-              ) : (
-                <Button variant="primary" icon={<Icon name="mic" />} onClick={() => {
-                    live.connect(); // recognised text travels through the Live Feed server
-                    void speech.start();
-                  }}
-                  disabled={Boolean(s.configError)} title={s.configError ?? undefined}>
-                  Start Listening
-                </Button>
-              )}
-            </div>
-          )}
-          {sp.error && (
-            <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-800" role="alert">
-              {sp.error}
-            </p>
-          )}
-          {sp.supported && (
-            <p className="text-[11px] leading-relaxed text-slate-500">
-              Uses the browser’s Web Speech API. In Chrome and Edge, audio is sent to the browser vendor’s online speech service, so an internet connection is required and the audio leaves this device. Independent of
-              Audio recording: the saved recording is not transcribed.
-            </p>
-          )}
-        </section>
+      <div className="flex flex-col gap-3" data-tour="live-feed">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <StatusIndicator tone={status.tone} label={status.label} pulse={sp.status === 'listening'} />
+          <LiveTranscriptStats />
+        </div>
 
-        <section aria-label="Live Feed server" className="flex flex-col gap-2 border-t border-slate-200 pt-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-xs font-semibold text-slate-700">Live Feed server</span>
-            <StatusIndicator tone={conn.tone} label={conn.label} pulse={false} className="text-xs" />
-          </div>
-          <p className="text-xs text-slate-500" title={conn.detail}>
-            {conn.detail}
-            {s.speechOutbox > 0 && ` · ${s.speechOutbox} recognised phrase${s.speechOutbox === 1 ? '' : 's'} waiting to be sent`}
+        {!sp.supported ? (
+          <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900" role="status">
+            {sp.unsupportedReason}
           </p>
-          <div className="font-mono text-[11px] text-slate-500">
-            Case {CASE.reference} · stream session {s.sessionId ?? '—'}
-          </div>
-          {s.sessionRestarted && (
-            <p className="text-xs text-amber-700" role="status">
-              The Live Feed server restarted with a new session, so the live transcript started again from the beginning.
-            </p>
-          )}
-          {simulatorRunning && (
-            <p className="flex flex-wrap items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900" role="status">
-              The synthetic dialogue simulator (Performance Lab) is also running, so generated lines are mixed into this feed.
-              <Button size="sm" onClick={() => live.configureServer({ running: false })}>
-                Stop simulator
+        ) : (
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="flex flex-col gap-1 text-[11px] font-medium tracking-wide text-slate-600 uppercase">
+              Language
+              <select
+                value={sp.lang}
+                onChange={(e) => speech.setLang(e.target.value)}
+                disabled={listening}
+                className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm font-normal tracking-normal text-slate-800 normal-case disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-600"
+              >
+                {SPEECH_LANGUAGES.map((l) => (
+                  <option key={l.value} value={l.value}>
+                    {l.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {listening ? (
+              <Button variant="primary" onClick={speech.stop} disabled={sp.status === 'stopping'}>
+                ■ Stop Listening
               </Button>
-            </p>
+            ) : (
+              <Button
+                variant="primary"
+                icon={<Icon name="mic" />}
+                onClick={() => {
+                  live.connect(); // server mode: recognised text travels through the Live Feed server
+                  void speech.start();
+                }}
+                disabled={Boolean(s.configError)}
+                title={s.configError ?? undefined}
+              >
+                Start Listening
+              </Button>
+            )}
+          </div>
+        )}
+
+        {sp.error && (
+          <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-800" role="alert">
+            {sp.error}
+          </p>
+        )}
+
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
+          <span className={s.configError ? 'text-amber-800' : undefined} title={conn.detail}>
+            {feedLine}
+            {s.speechOutbox > 0 && ` · ${s.speechOutbox} phrase${s.speechOutbox === 1 ? '' : 's'} waiting to be sent`}
+          </span>
+          {serverMode && s.state !== 'disconnected' && (
+            <span className="flex gap-1.5">
+              <Button size="sm" variant="ghost" onClick={live.reconnectNow}>
+                Reconnect
+              </Button>
+              <Button size="sm" variant="ghost" onClick={live.disconnect}>
+                Disconnect
+              </Button>
+            </span>
           )}
-          {!s.configError && !s.localMode && (
-            <div className="flex flex-wrap gap-2">
-              {s.state === 'disconnected' ? (
-                <Button size="sm" icon={<Icon name="plug" />} onClick={live.connect}>
-                  Connect
-                </Button>
-              ) : (
-                <>
-                  <Button size="sm" onClick={live.disconnect}>
-                    Disconnect
-                  </Button>
-                  <Button size="sm" onClick={live.reconnectNow}>
-                    Reconnect
-                  </Button>
-                </>
-              )}
-            </div>
-          )}
-        </section>
+        </div>
+
+        {s.sessionRestarted && (
+          <p className="text-xs text-amber-700" role="status">
+            The Live Feed server restarted with a new session, so the live transcript started again from the beginning.
+          </p>
+        )}
+        {simulatorRunning && (
+          <p className="flex flex-wrap items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900" role="status">
+            The synthetic dialogue simulator (Performance Lab) is also running, so generated lines are mixed into this feed.
+            <Button size="sm" onClick={() => live.configureServer({ running: false })}>
+              Stop simulator
+            </Button>
+          </p>
+        )}
+        {sp.supported && (
+          <p className="text-[11px] leading-relaxed text-slate-500">
+            Uses the browser’s Web Speech API. In Chrome and Edge, audio is sent to the browser vendor’s online speech service, so an internet connection is required and the audio leaves this device. Independent
+            of Audio recording: the saved recording is not transcribed. Case {CASE.reference}.
+          </p>
+        )}
       </div>
     </Card>
   );
