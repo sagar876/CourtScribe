@@ -16,8 +16,8 @@ const VIEWPORTS = [
   [390, 844],
 ] as const;
 const ROUTES = [
-  ['workspace', '/workspace', 'Courtroom Workspace'],
-  ['performance-lab', '/performance-lab', 'Performance Lab'],
+  ['workspace', '/workspace', 'Courtroom'],
+  ['connection', '/connection', 'Connection & Reliability'],
 ] as const;
 const SHOTS = 'test-results/screens';
 process.env.FAKE_MIC = join(tmpdir(), 'courtscribe-audit-mic.wav');

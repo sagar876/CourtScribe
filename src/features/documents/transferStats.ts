@@ -1,6 +1,6 @@
 import { RateMeter } from '../../lib/stats.ts';
 
-/** Real upload/download measurements, read by the Performance Lab. */
+/** Real upload/download measurements. */
 class TransferStats {
   activeUploads = 0;
   uploadedBytes = 0;

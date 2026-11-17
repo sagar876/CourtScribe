@@ -21,7 +21,7 @@ async function record(page: Page, seconds: RegExp) {
 }
 
 test('deep links and refresh work on the production build', async ({ page }) => {
-  for (const path of ['/workspace', '/performance-lab']) {
+  for (const path of ['/workspace', '/connection']) {
     await page.goto(path);
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
     await page.reload();
@@ -96,7 +96,7 @@ test('saved recordings open and play offline (service worker + IndexedDB)', asyn
   await context.setOffline(true);
   page.on('dialog', (d) => void d.accept());
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Courtroom Workspace' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Courtroom' })).toBeVisible();
   await expect(items(page).first()).toContainText('✓ Saved in this browser');
   await items(page).first().getByRole('button', { name: 'Play', exact: true }).click();
   await expect(library(page).getByRole('region', { name: /^Player:/ }).getByRole('button', { name: 'Pause' })).toBeVisible({ timeout: 10_000 });

@@ -1,5 +1,6 @@
 import type { ClientMessage, ServerConfig, ServerMessage, ServerStats, SpeechInput, TranscriptEvent } from '../../../shared/protocol.ts';
 import { trackResource } from '../../lib/resources.ts';
+import type { NetworkSimulator } from './networkSimulator.ts';
 import { backoffCeiling, backoffDelay, DEFAULT_BACKOFF, type BackoffOptions } from './backoff.ts';
 
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'syncing';
@@ -68,7 +69,12 @@ export class ConnectionManager {
     private readonly url: string,
     private readonly handlers: ConnectionHandlers,
     private readonly backoff: BackoffOptions = DEFAULT_BACKOFF,
-  ) {}
+    /** Development-only network simulation between the socket and the handlers. */
+    private readonly sim: NetworkSimulator | null = null,
+  ) {
+    // When the device comes back online, retry at once instead of waiting out the backoff.
+    if (typeof window !== 'undefined') window.addEventListener('online', () => this.retryNow());
+  }
 
   /** State transitions (not per-event) are published immediately. */
   onStateChange(l: () => void): () => void {
@@ -112,6 +118,28 @@ export class ConnectionManager {
     this.closeSocket(4000, 'simulated outage');
     this.markDropped('Network outage (simulated)');
     this.scheduleRetry();
+  }
+
+  /** Simulated loss of the network: the socket closes and reconnecting fails until restored. */
+  setNetworkLost(lost: boolean): void {
+    if (lost) {
+      this.s.offlineUntil = Number.POSITIVE_INFINITY;
+      if (!this.wantConnected) return;
+      this.closeSocket(4000, 'network lost (simulated)');
+      this.markDropped('Network connection lost (simulated)');
+      this.scheduleRetry();
+      return;
+    }
+    this.s.offlineUntil = 0;
+    this.retryNow();
+  }
+
+  /** Network is back: skip the remaining backoff wait. */
+  private retryNow(): void {
+    if (!this.wantConnected || this.s.state !== 'reconnecting' || performance.now() < this.s.offlineUntil) return;
+    this.clearRetry();
+    this.attempt = 0;
+    this.open('reconnecting');
   }
 
   requestServerDrop(): void {
@@ -179,7 +207,7 @@ export class ConnectionManager {
     }, HANDSHAKE_TIMEOUT_MS);
     this.releaseSocket = trackResource('websocket');
     ws.onopen = () => this.send({ type: 'hello', clientId: this.clientId });
-    ws.onmessage = (e: MessageEvent<string>) => this.onFrame(e.data);
+    ws.onmessage = (e: MessageEvent<string>) => (this.sim ? this.sim.inbound(e.data, performance.now(), this.deliverFrame) : this.onFrame(e.data, performance.now()));
     ws.onerror = () => {
       this.s.lastError = `Cannot reach ${this.url}`;
     };
@@ -191,9 +219,11 @@ export class ConnectionManager {
     };
   }
 
-  private onFrame(raw: string): void {
-    const receivedAt = performance.now();
-    this.lastFrameAt = receivedAt;
+  private deliverFrame = (raw: string, arrivedAt: number) => this.onFrame(raw, arrivedAt);
+
+  /** `receivedAt` is when the frame reached the socket, so measured delays include any simulated hold-back. */
+  private onFrame(raw: string, receivedAt: number): void {
+    this.lastFrameAt = performance.now();
     this.s.framesReceived++;
     this.s.bytesReceived += raw.length;
     let msg: ServerMessage;
@@ -299,6 +329,7 @@ export class ConnectionManager {
   }
 
   private detach(): void {
+    this.sim?.dropInFlight();
     if (this.ws) this.ws.onopen = this.ws.onmessage = this.ws.onclose = this.ws.onerror = null;
     this.ws = null;
     this.releaseSocket?.();

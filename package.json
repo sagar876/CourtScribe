@@ -16,7 +16,6 @@
     "dev:docs": "tsx watch server/documents.ts"
   },
   "dependencies": {
-    "@antv/g2plot": "^2.4.35",
     "@tanstack/react-virtual": "^3.14.26",
     "@tiptap/extension-collaboration": "^3.34.0",
     "@tiptap/extension-collaboration-caret": "^3.34.0",

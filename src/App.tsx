@@ -11,9 +11,9 @@ import { RouteErrorBoundary } from "./components/layout/RouteErrorBoundary.tsx";
 import { lazyPage } from "./lib/lazyPage.ts";
 import { WorkspacePage } from "./pages/WorkspacePage.tsx";
 
-// Performance Lab pulls in G2Plot; load it only when the route is visited.
-const PerformanceLabPage = lazyPage(() =>
-  import("./pages/PerformanceLabPage.tsx").then((m) => m.PerformanceLabPage),
+// Pages load on first visit.
+const ConnectionLabPage = lazyPage(() =>
+  import("./pages/ConnectionLabPage.tsx").then((m) => m.ConnectionLabPage),
 );
 const RecordingsPage = lazyPage(() =>
   import("./pages/RecordingsPage.tsx").then((m) => m.RecordingsPage),
@@ -111,13 +111,14 @@ export function App() {
             }
           />
           <Route
-            path="performance-lab"
+            path="connection"
             element={
-              <Page loading="Loading Performance Lab…">
-                <PerformanceLabPage />
+              <Page loading="Loading…">
+                <ConnectionLabPage />
               </Page>
             }
           />
+          <Route path="performance-lab" element={<Navigate to="/connection" replace />} />
           <Route path="*" element={<Navigate to="/workspace" replace />} />
         </Route>
       </Routes>

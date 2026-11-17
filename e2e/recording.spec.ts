@@ -32,7 +32,7 @@ test('audio recording: explicit start, pause/resume, indicator across pages, sto
   await panel.getByRole('button', { name: 'Resume' }).click();
 
   // The transcript stream is independent and the indicator follows the user to other pages.
-  await page.getByRole('link', { name: 'Performance Lab' }).click();
+  await page.getByRole('link', { name: 'Connection & Reliability' }).click();
   await expect(banner).toBeVisible();
   await page.getByRole('link', { name: 'Recording controls' }).click();
 

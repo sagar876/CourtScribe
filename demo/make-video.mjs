@@ -122,7 +122,7 @@ async function capture(micFile) {
 
   // 0–4 — open CourtScribe and the courtroom session
   await page.goto(`${BASE}/workspace`);
-  await page.getByRole('heading', { name: 'Courtroom Workspace' }).waitFor();
+  await page.getByRole('heading', { name: 'Courtroom' }).waitFor();
   await page.mouse.move(W / 2, H / 2);
   await until(0.8);
   await click(page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Workspace' }));
@@ -190,8 +190,8 @@ async function capture(micFile) {
   await zoom(streamStatus.locator('xpath=ancestor::section'), 25.2, 26.9, 1.2);
   await glideTo(streamStatus, 26);
   await until(26.9);
-  await click(page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Performance Lab' }), 26);
-  await page.getByRole('heading', { name: 'Performance Lab' }).waitFor();
+  await click(page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Connection & Reliability' }), 26);
+  await page.getByRole('heading', { name: 'Connection & Reliability' }).waitFor();
   await glide(W * 0.55, H * 0.42, 30);
   await until(DURATION + 0.6);
 

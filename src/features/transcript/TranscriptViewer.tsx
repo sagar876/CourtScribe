@@ -26,7 +26,7 @@ interface TranscriptViewerProps {
   playback?: PlaybackSync;
   /** Dashboards read dataset size, mounted rows and last search from here. */
   probe?: ViewerProbe;
-  /** Show engineering details (render counters, confidence, sequence numbers and IDs). Performance Lab only. */
+  /** Show engineering details (render counters, confidence, sequence numbers and IDs). */
   showDiagnostics?: boolean;
 }
 

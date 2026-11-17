@@ -4,7 +4,7 @@ import { handleChunkPreloadErrors } from './lib/lazyPage.ts';
 import './index.css';
 
 // StrictMode is intentionally omitted: its dev-only double render/effect
-// invocation would distort the render counters the Performance Lab measures.
+// invocation would distort render measurements.
 handleChunkPreloadErrors();
 
 // Offline support (production builds only, so it never interferes with the dev server).

@@ -2,7 +2,6 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Button } from '../../components/ui/Button.tsx';
 import { MetricTile } from '../../components/ui/MetricTile.tsx';
 import { formatMs, formatNumber } from '../../lib/format.ts';
-import { useMonitorCommit } from '../perf/monitorRenders.ts';
 import { resetViewerStats, type ViewerStats } from './renderStats.ts';
 
 interface Sample {
@@ -14,7 +13,6 @@ interface Sample {
 
 /** Render cost of the transcript list. Polls counters at 4 Hz — reading metrics never re-renders the transcript. */
 export function BenchmarkBar({ stats, extra }: { stats: ViewerStats; extra?: ReactNode }) {
-  useMonitorCommit();
   const [s, setS] = useState<Sample | null>(null);
 
   useEffect(() => {

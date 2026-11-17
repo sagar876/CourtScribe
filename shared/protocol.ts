@@ -2,7 +2,7 @@ import type { SpeakerId } from './transcript.ts';
 import type { TranscriptEventType } from './transcriptEvents.ts';
 
 export const STREAM_PORT = 8787;
-export const STREAM_RATES = [10, 50, 100, 500] as const;
+export const STREAM_RATES = [5, 10, 50, 100, 500] as const;
 export type StreamRate = (typeof STREAM_RATES)[number];
 
 /** One transcript event on the wire. Each event is sent as its own WebSocket frame. */
@@ -51,6 +51,8 @@ export interface ServerConfig {
   duplicateRate: number;
   /** 0..1 probability of swapping an event with the next one. */
   reorderRate: number;
+  /** How many recent events the server keeps for replay after a reconnect (0 = its full buffer). */
+  replayLimit: number;
 }
 
 export interface ServerStats {

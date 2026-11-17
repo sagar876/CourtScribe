@@ -47,7 +47,7 @@ const lastAckByClient = new Map<string, number>();
 const forgetTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const clients = new Set<ClientState>();
 
-const config: ServerConfig = { running: false, rate: 50, duplicateRate: 0, reorderRate: 0 };
+const config: ServerConfig = { running: false, rate: 50, duplicateRate: 0, reorderRate: 0, replayLimit: 0 };
 let headSeq = 0;
 let generatedTotal = 0;
 let sentTotal = 0;
@@ -62,7 +62,8 @@ const speechEvents = new SpeechEventBuilder(sessionId, Date.now());
 let carry = 0;
 let lastTick = performance.now();
 
-const oldestBufferedSeq = () => Math.max(1, headSeq - BUFFER_CAPACITY + 1);
+const replayCapacity = () => (config.replayLimit > 0 ? Math.min(config.replayLimit, BUFFER_CAPACITY) : BUFFER_CAPACITY);
+const oldestBufferedSeq = () => Math.max(1, headSeq - replayCapacity() + 1);
 
 /** Next event: partial hypotheses for the current segment, then its final. */
 function generate(): StoredEvent {
@@ -212,6 +213,7 @@ function handleMessage(c: ClientState, msg: ClientMessage): void {
       if (next.rate !== undefined && (STREAM_RATES as readonly number[]).includes(next.rate)) config.rate = next.rate;
       if (typeof next.duplicateRate === 'number') config.duplicateRate = clamp01(next.duplicateRate);
       if (typeof next.reorderRate === 'number') config.reorderRate = clamp01(next.reorderRate);
+      if (typeof next.replayLimit === 'number' && next.replayLimit >= 0) config.replayLimit = Math.min(BUFFER_CAPACITY, Math.floor(next.replayLimit));
       broadcastStats();
       break;
     }

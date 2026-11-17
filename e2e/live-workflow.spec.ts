@@ -24,8 +24,8 @@ test('live transcript workflow: connect, stream, search, measure, navigate', asy
     await expect(page.locator('mark').first()).toBeVisible();
 
     // Performance Lab sees the same live session
-    await page.getByRole('link', { name: 'Performance Lab' }).click();
-    await expect(page.getByRole('heading', { name: 'Performance Lab' })).toBeVisible();
+    await page.getByRole('link', { name: 'Connection & Reliability' }).click();
+    await expect(page.getByRole('heading', { name: 'Connection & Reliability' })).toBeVisible();
     await page.getByRole('radio', { name: 'Live stream' }).click();
     await expect.poll(async () => Number((await tileValue(page, 'Events per second').textContent())?.replace(/,/g, '')), { timeout: 10_000 }).toBeGreaterThan(0);
     // The overview polls at 4 Hz, so wait for it to read the newly mounted live viewer.
@@ -36,9 +36,9 @@ test('live transcript workflow: connect, stream, search, measure, navigate', asy
     // Repeated navigation must not leak page-scoped resources.
     for (let i = 0; i < 5; i++) {
       await page.getByRole('link', { name: 'Workspace' }).click();
-      await expect(page.getByRole('heading', { name: 'Courtroom Workspace' })).toBeVisible();
-      await page.getByRole('link', { name: 'Performance Lab' }).click();
-      await expect(page.getByRole('heading', { name: 'Performance Lab' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Courtroom' })).toBeVisible();
+      await page.getByRole('link', { name: 'Connection & Reliability' }).click();
+      await expect(page.getByRole('heading', { name: 'Connection & Reliability' })).toBeVisible();
     }
   } finally {
     await page.getByRole('button', { name: 'Stop simulator' }).click().catch(() => {});

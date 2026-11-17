@@ -7,7 +7,7 @@ const NAV: { to: string; label: string; icon: IconName }[] = [
   { to: '/recordings', label: 'Recordings', icon: 'waveform' },
   { to: '/documents', label: 'Documents', icon: 'document' },
   { to: '/editor', label: 'Editor', icon: 'edit' },
-  { to: '/performance-lab', label: 'Performance Lab', icon: 'lab' },
+  { to: '/connection', label: 'Connection & Reliability', icon: 'plug' },
 ];
 
 interface SidebarProps {
