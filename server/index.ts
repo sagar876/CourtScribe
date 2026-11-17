@@ -281,8 +281,26 @@ function onConnection(ws: WebSocket): void {
       }, CLIENT_STATE_TTL_MS),
     );
   };
-  ws.on('close', drop);
+  ws.on('close', () => {
+    drop();
+    scheduleIdleStop();
+  });
   ws.on('error', drop);
+}
+
+/** The sample dialogue is for demos: stop generating it once nobody has been connected for a minute. */
+const IDLE_STOP_MS = 60_000;
+let idleStopTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleIdleStop(): void {
+  if (idleStopTimer) clearTimeout(idleStopTimer);
+  idleStopTimer = setTimeout(() => {
+    idleStopTimer = null;
+    if (clients.size === 0 && config.running) {
+      config.running = false;
+      flushHeld();
+      console.log('[stream] no clients for 60 s — sample dialogue stopped');
+    }
+  }, IDLE_STOP_MS);
 }
 
 let wss: WebSocketServer | null = null;

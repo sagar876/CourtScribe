@@ -416,7 +416,14 @@ export function ConnectionLabPage() {
     return () => clearInterval(t);
   }, []);
   // The simulation is a demonstration: never leave the rest of the app on a degraded connection.
-  useEffect(() => () => live.setNetworkCondition("normal"), []);
+  // Leaving the page also stops the sample hearing it started.
+  useEffect(
+    () => () => {
+      live.setNetworkCondition("normal");
+      if (live.sampleRequested) live.setSampleHearing(false);
+    },
+    [],
+  );
 
   const header = (
     <PageHeader

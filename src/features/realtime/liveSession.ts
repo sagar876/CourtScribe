@@ -146,6 +146,8 @@ export function toSegment(
  */
 class LiveSession {
   readonly store = new TranscriptStore();
+  /** Only what was spoken into the microphone — the Courtroom transcript. Sample/test dialogue never goes here. */
+  readonly speechStore = new TranscriptStore();
   private readonly pipeline: EventPipeline;
   private readonly connection: ConnectionManager;
   private readonly renderLatency: RenderLatencyTracker;
@@ -193,6 +195,7 @@ class LiveSession {
           // sessions in one transcript would overwrite segments and break time ordering, so start fresh.
           if (previous !== null && !sameSession) {
             this.store.clear();
+            this.speechStore.clear();
             this.sessionRestarted = true;
           }
           const before = this.pipeline.lastProcessedSeq;
@@ -260,6 +263,8 @@ class LiveSession {
         this.pipeline.c.duplicateBySeq -
         this.recoveryDupBase;
     this.store.upsert(segments); // one store notification per batch
+    const spoken = segments.filter((seg) => seg.speakerId === 'mic');
+    if (spoken.length > 0) this.speechStore.upsert(spoken);
     this.renderLatency.expect(receivedAt);
   }
 
@@ -347,6 +352,9 @@ class LiveSession {
     this.publish();
   };
   /** Plays the server's made-up hearing through the real connection, at a readable pace. */
+  get sampleRequested(): boolean {
+    return this.wantSample === true;
+  }
   setSampleHearing = (on: boolean) => {
     this.wantSample = on;
     if (on) this.connect();
@@ -521,6 +529,8 @@ const STREAM_CONFIG_ERROR = !STREAM_URL
 /** App-wide singleton — a plain object, not React context. */
 export const live = new LiveSession(STREAM_URL, STREAM_CONFIG_ERROR);
 export const liveTranscript = live.store;
+/** Microphone speech only (Courtroom). */
+export const speechTranscript = live.speechStore;
 
 export function useLiveSnapshot(): LiveSnapshot {
   return useSyncExternalStore(live.subscribe, live.getSnapshot);

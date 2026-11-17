@@ -12,13 +12,13 @@ import { Icon } from '../components/ui/Icon.tsx';
 import { KeyValueGrid } from '../components/ui/KeyValueGrid.tsx';
 import { PageHeader } from '../components/ui/PageHeader.tsx';
 import { StatusIndicator } from '../components/ui/StatusIndicator.tsx';
-import { live, liveTranscript, useLiveSnapshot } from '../features/realtime/liveSession.ts';
+import { live, speechTranscript, useLiveSnapshot } from '../features/realtime/liveSession.ts';
 import { TranscriptViewer } from '../features/transcript/TranscriptViewer.tsx';
 
 
 function LiveTranscriptStats() {
-  useSyncExternalStore(liveTranscript.subscribe, liveTranscript.getVersion);
-  const n = liveTranscript.size;
+  useSyncExternalStore(speechTranscript.subscribe, speechTranscript.getVersion);
+  const n = speechTranscript.size;
   return <span className="tabular text-xs text-slate-500">{n.toLocaleString('en-IN')} {n === 1 ? 'line' : 'lines'}</span>;
 }
 
@@ -40,7 +40,6 @@ function LiveFeedCard() {
   const sp = useSpeechState();
   const status = SPEECH_STATUS[sp.status];
   const listening = sp.status === 'listening' || sp.status === 'restarting' || sp.status === 'requesting' || sp.status === 'stopping';
-  const simulatorRunning = s.server?.config.running ?? false;
   const serverMode = !s.localMode && !s.configError;
   // Only connection problems are worth mentioning to the user; local mode needs no status line at all.
   const feedLine = s.configError
@@ -146,14 +145,6 @@ function LiveFeedCard() {
             The Live Feed restarted, so the transcript started again from the beginning.
           </p>
         )}
-        {simulatorRunning && (
-          <p className="flex flex-wrap items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900" role="status">
-            The sample hearing (made-up dialogue, started from Connection &amp; Reliability) is also being added to this transcript.
-            <Button size="sm" onClick={() => live.setSampleHearing(false)}>
-              Stop sample hearing
-            </Button>
-          </p>
-        )}
       </div>
     </Card>
   );
@@ -162,11 +153,11 @@ function LiveFeedCard() {
 type TranscriptSource = 'live' | 100_000;
 
 export function WorkspacePage() {
-  const [{ source, store }, setSelection] = useState<{ source: TranscriptSource; store: TranscriptStore }>({ source: 'live', store: liveTranscript });
+  const [{ source, store }, setSelection] = useState<{ source: TranscriptSource; store: TranscriptStore }>({ source: 'live', store: speechTranscript });
   // The 100K sample shows that very long hearings stay fast (virtualised list); built on first use, kept for this visit.
   const recorded = useRef(new Map<number, TranscriptStore>());
   const selectSource = (next: TranscriptSource) => {
-    if (next === 'live') return setSelection({ source: next, store: liveTranscript });
+    if (next === 'live') return setSelection({ source: next, store: speechTranscript });
     let s = recorded.current.get(next);
     if (!s) {
       s = new TranscriptStore(generateTranscript(next));
