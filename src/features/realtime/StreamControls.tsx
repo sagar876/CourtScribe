@@ -45,7 +45,12 @@ export function StreamControls() {
           </span>
         </div>
         {s.state === 'disconnected' ? (
-          <Button variant="primary" size="sm" onClick={live.connect}>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={live.connect}
+            unavailableReason={s.localMode ? 'No Live Feed server is configured for this deployment (VITE_STREAM_URL), so the simulator and stress tests are unavailable.' : (s.configError ?? undefined)}
+          >
             Connect
           </Button>
         ) : (

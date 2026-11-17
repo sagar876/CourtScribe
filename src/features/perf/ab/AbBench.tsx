@@ -123,6 +123,7 @@ export function AbBench() {
       if (pipeline) pipeline.ingest(event, receivedAt);
       else naiveSink.current?.push(toSegment(event, 'live-'), receivedAt);
     };
+    if (!STREAM_URL) throw new Error('The Live Feed server is not configured for this deployment (VITE_STREAM_URL).');
     const conn = new ConnectionManager(STREAM_URL, {
       onEvent,
       onHello: (h) => (pipeline ? pipeline.startSession(h.startSeq, false, 0) : h.startSeq - 1),

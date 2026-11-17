@@ -120,6 +120,12 @@ export function TranscriptViewer({ store, live = false, renderMode = 'virtual', 
       {showBenchmark && <BenchmarkBar stats={stats} extra={benchmarkExtra} />}
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
         <TranscriptToolbar query={query} onQueryChange={setQuery} matchCount={matches.length} currentMatch={currentMatch} pending={pending} onStep={step} onJump={jump} />
+        <div aria-hidden="true" className="hidden grid-cols-[84px_150px_1fr_auto] gap-x-3 border-b border-slate-200 bg-slate-50 px-4 py-1.5 text-[11px] font-semibold tracking-wide text-slate-600 uppercase sm:grid">
+          <span>Time</span>
+          <span>Speaker</span>
+          <span>Text</span>
+          <span>Status</span>
+        </div>
         <div className={cn('relative', listClassName)}>
           <Profiler id="transcript-list" onRender={onRender}>
             <List

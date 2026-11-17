@@ -15,7 +15,7 @@ export interface TranscriptSegment {
   isPartial?: boolean;
 }
 
-export type SpeakerId = 'judge' | 'pp' | 'dc' | 'pw1' | 'clerk';
+export type SpeakerId = 'judge' | 'pp' | 'dc' | 'pw1' | 'clerk' | 'mic';
 
 export const SPEAKERS: Record<SpeakerId, string> = {
   judge: 'Presiding Judge',
@@ -23,4 +23,6 @@ export const SPEAKERS: Record<SpeakerId, string> = {
   dc: 'Defence Counsel',
   pw1: 'PW-1 (Witness)',
   clerk: 'Bench Clerk',
+  /** Live microphone input. No speaker identification is attempted. */
+  mic: 'Microphone User',
 };

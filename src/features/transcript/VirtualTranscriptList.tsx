@@ -153,14 +153,14 @@ export function VirtualTranscriptList({ store, live, activeIndex, selectedId, ma
           {live ? 'Waiting for live transcript segments…' : 'No segments loaded.'}
         </div>
       )}
-      {live && !following && unseen > 0 && (
+      {live && !following && count > 0 && (
         <button
           type="button"
           onClick={jumpToLatest}
           className="absolute bottom-4 left-1/2 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-navy-900 px-3.5 py-1.5 text-xs font-medium text-white shadow-lg hover:bg-navy-800"
         >
           <Icon name="arrowDown" className="size-3.5" />
-          {unseen.toLocaleString('en-IN')} new segment{unseen === 1 ? '' : 's'} — follow live
+          {unseen > 0 ? `${unseen.toLocaleString('en-IN')} new segment${unseen === 1 ? '' : 's'} — jump to latest` : 'Jump to latest'}
         </button>
       )}
     </div>

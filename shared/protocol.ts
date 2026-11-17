@@ -26,6 +26,24 @@ export interface TranscriptEvent {
   replay: boolean;
 }
 
+/**
+ * Recognised speech sent by a client. Provider-independent: today the browser's
+ * Web Speech API produces it; a server-side transcription engine could emit the
+ * same shape. The server assigns event IDs, sequence numbers and timestamps.
+ */
+export interface SpeechInput {
+  /** Stable for one utterance: interim updates and the final result share it. */
+  utteranceId: string;
+  text: string;
+  isFinal: boolean;
+  /** 0..1 when the recogniser provides it. */
+  confidence?: number;
+  /** BCP-47 language tag, e.g. "en-IN". */
+  lang?: string;
+  /** Which recogniser produced it, e.g. "browser-web-speech". */
+  source?: string;
+}
+
 export interface ServerConfig {
   running: boolean;
   rate: StreamRate;
@@ -49,6 +67,8 @@ export interface ServerStats {
   reorderedInjected: number;
   replayedTotal: number;
   clients: number;
+  speechAccepted: number;
+  speechRejected: number;
   /** Server's view of this specific client. */
   you: { lastAckedSeq: number; bufferedAmount: number; sent: number } | null;
 }
@@ -63,4 +83,5 @@ export type ClientMessage =
   | { type: 'ack'; seq: number }
   | { type: 'config'; config: Partial<ServerConfig> }
   | { type: 'burst'; count: number }
-  | { type: 'disconnect-me' };
+  | { type: 'disconnect-me' }
+  | { type: 'speech'; speech: SpeechInput };

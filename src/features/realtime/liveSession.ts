@@ -1,10 +1,11 @@
 import { useSyncExternalStore } from 'react';
-import { STREAM_PORT, type ServerConfig, type ServerStats, type TranscriptEvent } from '../../../shared/protocol.ts';
+import { STREAM_PORT, type ServerConfig, type ServerStats, type SpeechInput, type TranscriptEvent } from '../../../shared/protocol.ts';
 import { SPEAKERS, type TranscriptSegment } from '../../../shared/transcript.ts';
 import { trackResource } from '../../lib/resources.ts';
 import { TranscriptStore } from '../transcript/TranscriptStore.ts';
 import { ConnectionManager, type ConnectionState } from './ConnectionManager.ts';
 import { DEFAULT_PIPELINE, EventPipeline, type Queued } from './EventPipeline.ts';
+import { parseSpeech, SpeechEventBuilder } from '../../../shared/speechEvents.ts';
 import { RenderLatencyTracker } from './RenderLatencyTracker.ts';
 
 export type { ConnectionState };
@@ -16,6 +17,12 @@ export interface LiveSnapshot {
   state: ConnectionState;
   sessionId: string | null;
   lastError: string | null;
+  /** Set when the configured Live Feed server address cannot work from this page. */
+  configError: string | null;
+  /** No Live Feed server configured: recognised speech is processed in this browser. */
+  localMode: boolean;
+  /** Speech results waiting for the socket to connect. */
+  speechOutbox: number;
   sessionRestarted: boolean;
   windowMs: number;
   // Throughput (browser-measured)
@@ -93,11 +100,21 @@ class LiveSession {
   private snapshot: LiveSnapshot;
   /** Set when the server came back as a new session and the transcript was restarted. */
   private sessionRestarted = false;
+  /** Latest result per utterance, kept while the socket is not connected (interims superseded, bounded). */
+  private outbox = new Map<string, SpeechInput>();
+  private configError: string | null = null;
+  /** Local mode: the browser plays the server's role, using the same shared event builder. */
+  private readonly localMode: boolean;
+  private localSeq = 0;
+  private localStarted = false;
+  private readonly localEvents = new SpeechEventBuilder('local', Date.now());
 
-  constructor(url: string) {
+  constructor(url: string | null, configError: string | null) {
+    this.configError = configError;
+    this.localMode = url === null && configError === null;
     this.renderLatency = new RenderLatencyTracker(this.store);
     this.pipeline = new EventPipeline((batch) => this.apply(batch));
-    this.connection = new ConnectionManager(url, {
+    this.connection = new ConnectionManager(url ?? 'ws://invalid.localhost', {
       onEvent: (event, receivedAt) => this.pipeline.ingest(event, receivedAt),
       onHello: (hello) => {
         const previous = this.connection.s.sessionId;
@@ -112,7 +129,10 @@ class LiveSession {
       },
     });
     this.pipeline.onProgress((seq) => this.connection.setProcessedSeq(seq));
-    this.connection.onStateChange(() => this.publish());
+    this.connection.onStateChange(() => {
+      this.flushOutbox();
+      this.publish();
+    });
     this.snapshot = this.build();
   }
 
@@ -130,15 +150,33 @@ class LiveSession {
 
   // ---------- actions ----------
   connect = () => {
+    if (this.configError || this.localMode) return this.publish();
     this.connection.connect();
-    if (!this.timer) {
-      this.timer = setInterval(() => {
-        this.pipeline.tick();
-        this.publish();
-      }, PUBLISH_MS);
-      this.releaseTimer = trackResource('interval');
-    }
+    this.ensureTimer();
   };
+
+  private ensureTimer(): void {
+    if (this.timer) return;
+    this.timer = setInterval(() => {
+      this.pipeline.tick();
+      this.publish();
+    }, PUBLISH_MS);
+    this.releaseTimer = trackResource('interval');
+  }
+
+  /** Local mode: assign sequence numbers here and feed the same pipeline the server's events go through. */
+  private publishLocally(raw: SpeechInput): void {
+    const speech = parseSpeech(raw);
+    if (!speech) return;
+    if (!this.localStarted) {
+      this.pipeline.startSession(1, false, 0);
+      this.localStarted = true;
+      this.ensureTimer();
+    }
+    const seq = ++this.localSeq;
+    const event: TranscriptEvent = { ...this.localEvents.build('browser', speech), eventId: `local:${seq}`, sequenceNumber: seq, timestamp: Date.now(), replay: false };
+    this.pipeline.ingest(event, performance.now());
+  }
 
   disconnect = () => {
     this.connection.disconnect();
@@ -149,6 +187,29 @@ class LiveSession {
     this.releaseTimer = null;
     this.publish();
   };
+
+  /**
+   * Publishes recognised speech through the server (which assigns IDs, sequence numbers and timestamps)
+   * so it reaches the transcript via the same pipeline as every other event. Connects if needed.
+   */
+  publishSpeech = (speech: SpeechInput) => {
+    if (this.configError) return;
+    if (this.localMode) return this.publishLocally(speech);
+    if (this.connection.s.state === 'disconnected') this.connect();
+    if (this.outbox.size === 0 && this.connection.sendSpeech(speech)) return;
+    this.outbox.delete(speech.utteranceId); // keep order of latest updates
+    this.outbox.set(speech.utteranceId, speech);
+    while (this.outbox.size > 500) this.outbox.delete(this.outbox.keys().next().value!);
+    this.flushOutbox();
+    this.publish();
+  };
+
+  private flushOutbox(): void {
+    for (const [id, speech] of this.outbox) {
+      if (!this.connection.sendSpeech(speech)) return;
+      this.outbox.delete(id);
+    }
+  }
 
   reconnectNow = () => this.connection.reconnectNow();
   simulateOutage = (ms: number) => this.connection.simulateOutage(ms);
@@ -196,8 +257,11 @@ class LiveSession {
     const [renderP50, renderP95] = this.renderLatency.samples.percentiles(50, 95) as [number, number];
     return {
       state: s.state,
-      sessionId: s.sessionId,
-      lastError: s.lastError,
+      sessionId: this.localMode ? 'local' : s.sessionId,
+      lastError: this.configError ?? s.lastError,
+      configError: this.configError,
+      localMode: this.localMode,
+      speechOutbox: this.outbox.size,
       sessionRestarted: this.sessionRestarted,
       windowMs: p.windowMs,
       incomingPerSecond: p.inMeter.perSecond,
@@ -241,10 +305,22 @@ class LiveSession {
   }
 }
 
-export const STREAM_URL = import.meta.env.VITE_STREAM_URL ?? `ws://${location.hostname}:${STREAM_PORT}`;
+const isLocalHost = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname) || location.hostname.endsWith('.localhost');
+/**
+ * Live Feed server address: VITE_STREAM_URL when set; the local dev server on localhost. A deployed site
+ * without VITE_STREAM_URL (or with VITE_STREAM_URL=local) runs in local mode: no server, speech processed in
+ * the browser by the same shared code. Set VITE_STREAM_URL to a wss:// address to plug the server in.
+ */
+const configuredUrl = import.meta.env.VITE_STREAM_URL;
+export const STREAM_URL: string | null = configuredUrl === 'local' ? null : (configuredUrl ?? (isLocalHost ? `ws://${location.hostname}:${STREAM_PORT}` : null));
+const STREAM_CONFIG_ERROR = !STREAM_URL
+  ? null
+  : location.protocol === 'https:' && STREAM_URL.startsWith('ws://')
+    ? 'This page is served over HTTPS, so the Live Feed server must use a secure wss:// address (VITE_STREAM_URL).'
+    : null;
 
 /** App-wide singleton — a plain object, not React context. */
-export const live = new LiveSession(STREAM_URL);
+export const live = new LiveSession(STREAM_URL, STREAM_CONFIG_ERROR);
 export const liveTranscript = live.store;
 
 export function useLiveSnapshot(): LiveSnapshot {

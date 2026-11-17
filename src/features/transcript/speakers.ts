@@ -6,4 +6,5 @@ export const SPEAKER_STYLE: Record<SpeakerId, string> = {
   dc: 'text-violet-700 bg-violet-50',
   pw1: 'text-emerald-800 bg-emerald-50',
   clerk: 'text-slate-600 bg-slate-100',
+  mic: 'text-red-800 bg-red-50',
 };

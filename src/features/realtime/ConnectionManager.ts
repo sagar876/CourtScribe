@@ -1,4 +1,4 @@
-import type { ClientMessage, ServerConfig, ServerMessage, ServerStats, TranscriptEvent } from '../../../shared/protocol.ts';
+import type { ClientMessage, ServerConfig, ServerMessage, ServerStats, SpeechInput, TranscriptEvent } from '../../../shared/protocol.ts';
 import { trackResource } from '../../lib/resources.ts';
 import { backoffCeiling, backoffDelay, DEFAULT_BACKOFF, type BackoffOptions } from './backoff.ts';
 
@@ -124,6 +124,13 @@ export class ConnectionManager {
 
   burst(count: number): void {
     this.send({ type: 'burst', count });
+  }
+
+  /** Sends recognised speech; false when the socket is not open (caller keeps it for later). */
+  sendSpeech(speech: SpeechInput): boolean {
+    if (this.ws?.readyState !== WebSocket.OPEN || (this.s.state !== 'connected' && this.s.state !== 'syncing')) return false;
+    this.send({ type: 'speech', speech });
+    return true;
   }
 
   /** Pipeline progress: drives ACKs and the syncing → connected transition. */

@@ -73,12 +73,19 @@ export function TranscriptRowView({ segment, index, isActive, isSelected, isMatc
       </span>
       <p className={cn('col-start-2 font-transcript leading-relaxed sm:col-start-auto', segment.isPartial ? 'text-slate-500 italic' : 'text-slate-800')}>
         {isMatch ? highlightText(segment.text, highlight) : segment.text}
-        {segment.isPartial && <span className="ml-2 rounded bg-slate-100 px-1 align-middle font-sans text-[10px] not-italic text-slate-500">partial</span>}
       </p>
       <span className="col-start-2 flex items-center gap-2 pt-0.5 sm:col-start-auto sm:flex-col sm:items-end sm:gap-0.5">
-        <span title="Synthetic confidence score" className={cn('tabular font-mono text-[11px]', lowConfidence ? 'text-amber-700' : 'text-slate-400')}>
-          {(segment.confidence * 100).toFixed(0)}%
+        <span
+          className={cn('rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide uppercase', segment.isPartial ? 'bg-amber-50 text-amber-800 ring-1 ring-amber-200' : 'bg-slate-100 text-slate-700')}
+          title={segment.isPartial ? 'Still being recognised — the text may change' : 'Final result'}
+        >
+          {segment.isPartial ? 'Interim' : 'Final'}
         </span>
+        {segment.confidence > 0 && (
+          <span title={segment.speakerId === 'mic' ? 'Recogniser confidence' : 'Synthetic confidence score'} className={cn('tabular font-mono text-[11px]', lowConfidence ? 'text-amber-700' : 'text-slate-500')}>
+            {(segment.confidence * 100).toFixed(0)}%
+          </span>
+        )}
         <span ref={counterEl} title="Commits of this row component" className="tabular rounded bg-slate-100 px-1 font-mono text-[10px] text-slate-500" />
       </span>
     </div>

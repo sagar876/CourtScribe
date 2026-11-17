@@ -12,6 +12,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { STREAM_PORT, STREAM_RATES, type ClientMessage, type ServerConfig, type ServerMessage, type TranscriptEvent } from '../shared/protocol.ts';
 import { mulberry32, TranscriptGenerator } from '../shared/transcriptGenerator.ts';
 import { expandSegment, type EventDraft } from '../shared/transcriptEvents.ts';
+import { parseSpeech, SpeechEventBuilder } from '../shared/speechEvents.ts';
 
 const BUFFER_CAPACITY = 50_000;
 const MAX_BURST = 20_000;
@@ -55,6 +56,9 @@ let sendRateLastSecond = 0;
 let duplicatesInjected = 0;
 let reorderedInjected = 0;
 let replayedTotal = 0;
+let speechAccepted = 0;
+let speechRejected = 0;
+const speechEvents = new SpeechEventBuilder(sessionId, Date.now());
 let carry = 0;
 let lastTick = performance.now();
 
@@ -170,8 +174,26 @@ function handleHello(c: ClientState, clientId: string): void {
   c.live = true;
 }
 
+/** Turns accepted speech into a transcript event on the shared stream (sequence number, ID, timestamps). */
+function publishSpeech(c: ClientState, raw: unknown): void {
+  const speech = parseSpeech(raw);
+  if (!speech || !c.clientId) {
+    speechRejected++;
+    return;
+  }
+  speechAccepted++;
+  const seq = ++headSeq;
+  const ev: StoredEvent = { ...speechEvents.build(c.clientId.slice(0, 8), speech), eventId: `${sessionId}:${seq}`, sequenceNumber: seq };
+  ring[seq % BUFFER_CAPACITY] = ev;
+  generatedTotal++;
+  broadcastEvent(ev);
+}
+
 function handleMessage(c: ClientState, msg: ClientMessage): void {
   switch (msg.type) {
+    case 'speech':
+      publishSpeech(c, msg.speech);
+      break;
     case 'hello':
       handleHello(c, msg.clientId);
       break;
@@ -224,6 +246,8 @@ function broadcastStats(): void {
         reorderedInjected,
         replayedTotal,
         clients: clients.size,
+        speechAccepted,
+        speechRejected,
         you: c.clientId
           ? { lastAckedSeq: lastAckByClient.get(c.clientId) ?? 0, bufferedAmount: c.ws.bufferedAmount, sent: c.sent }
           : null,

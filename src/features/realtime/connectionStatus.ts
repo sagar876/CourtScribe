@@ -2,6 +2,14 @@ import type { Tone } from '../../components/ui/Badge.tsx';
 import type { LiveSnapshot } from './liveSession.ts';
 
 export function describeConnection(s: LiveSnapshot): { tone: Tone; label: string; detail: string; pulse: boolean } {
+  if (s.configError) return { tone: 'warning', label: 'Server not configured', detail: s.configError, pulse: false };
+  if (s.localMode)
+    return {
+      tone: 'info',
+      label: 'Local mode',
+      detail: 'No Live Feed server is configured for this deployment, so recognised speech is processed in this browser. Set VITE_STREAM_URL to route it through the Node server.',
+      pulse: false,
+    };
   switch (s.state) {
     case 'disconnected':
       return { tone: 'neutral', label: 'Disconnected', detail: 'Live feed is off.', pulse: false };
