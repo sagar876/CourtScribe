@@ -19,7 +19,7 @@ export function LevelMeter({ recorder, active }: { recorder: AudioRecorder; acti
       <div className="relative h-2.5 flex-1 overflow-hidden rounded-full bg-slate-200">
         <div ref={bar} className="absolute inset-0 origin-left bg-emerald-600" style={{ transform: 'scaleX(0)' }} />
       </div>
-      <span className="w-14 text-right text-[11px] text-slate-500">{active ? 'input' : 'idle'}</span>
+      <span className="w-20 text-right text-[11px] text-slate-500">{active ? 'Sound level' : ''}</span>
     </div>
   );
 }

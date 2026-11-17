@@ -82,11 +82,11 @@ export function TranscriptRowView({ segment, index, isActive, isSelected, isMatc
           {segment.isPartial ? 'Interim' : 'Final'}
         </span>
         {segment.confidence > 0 && (
-          <span title={segment.speakerId === 'mic' ? 'Recogniser confidence' : 'Synthetic confidence score'} className={cn('tabular font-mono text-[11px]', lowConfidence ? 'text-amber-700' : 'text-slate-500')}>
+          <span data-diagnostic="" title={segment.speakerId === 'mic' ? 'Recogniser confidence' : 'Synthetic confidence score'} className={cn('tabular font-mono text-[11px]', lowConfidence ? 'text-amber-700' : 'text-slate-500')}>
             {(segment.confidence * 100).toFixed(0)}%
           </span>
         )}
-        <span ref={counterEl} title="Commits of this row component" className="tabular rounded bg-slate-100 px-1 font-mono text-[10px] text-slate-500" />
+        <span ref={counterEl} data-diagnostic="" title="Commits of this row component" className="tabular rounded bg-slate-100 px-1 font-mono text-[10px] text-slate-500" />
       </span>
     </div>
   );

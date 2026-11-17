@@ -43,7 +43,7 @@ export function TranscriptToolbar({ query, onQueryChange, matchCount, currentMat
             onKeyDown={(e) => {
               if (e.key === 'Enter') onStep(e.shiftKey ? -1 : 1);
             }}
-            placeholder="Search speaker or text (e.g. Exhibit P3, സാക്ഷി)"
+            placeholder="Search the transcript"
             className="h-8 w-full rounded-md border border-slate-300 bg-white pr-2 pl-8 text-sm placeholder:text-slate-400 focus:border-accent-500 focus:outline-none"
           />
         </label>

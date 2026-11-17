@@ -26,13 +26,15 @@ interface TranscriptViewerProps {
   playback?: PlaybackSync;
   /** Dashboards read dataset size, mounted rows and last search from here. */
   probe?: ViewerProbe;
+  /** Show engineering details (render counters, confidence, sequence numbers and IDs). Performance Lab only. */
+  showDiagnostics?: boolean;
 }
 
 /**
  * Transcript viewer. State is isolated here (query, selection, active cursor);
  * the transcript itself lives in the store and is never copied into React state.
  */
-export function TranscriptViewer({ store, live = false, renderMode = 'virtual', searchEngine = 'worker', showBenchmark = false, benchmarkExtra, listClassName = 'h-[560px]', stats: externalStats, playback, probe }: TranscriptViewerProps) {
+export function TranscriptViewer({ store, live = false, renderMode = 'virtual', searchEngine = 'worker', showBenchmark = false, benchmarkExtra, listClassName = 'h-[560px]', stats: externalStats, playback, probe, showDiagnostics = false }: TranscriptViewerProps) {
   const [ownStats] = useState(createViewerStats);
   const stats = externalStats ?? ownStats;
   const listRef = useRef<ListHandle>(null);
@@ -116,7 +118,7 @@ export function TranscriptViewer({ store, live = false, renderMode = 'virtual', 
   const List = renderMode === 'virtual' ? VirtualTranscriptList : NaiveTranscriptList;
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className={cn('flex flex-col gap-3', !showDiagnostics && '[&_[data-diagnostic]]:hidden')}>
       {showBenchmark && <BenchmarkBar stats={stats} extra={benchmarkExtra} />}
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
         <TranscriptToolbar query={query} onQueryChange={setQuery} matchCount={matches.length} currentMatch={currentMatch} pending={pending} onStep={step} onJump={jump} />

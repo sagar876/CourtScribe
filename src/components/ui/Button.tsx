@@ -18,6 +18,8 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
    * is exposed visually (tooltip) and to assistive tech.
    */
   unavailableReason?: string;
+  /** Marks a planned feature: disabled, labelled "Future scope". */
+  futureScope?: boolean;
 }
 
 const variants: Record<Variant, string> = {
@@ -34,8 +36,9 @@ const sizes: Record<Size, string> = {
   md: 'h-9 px-3.5 text-sm gap-2',
 };
 
-export function Button({ variant = 'secondary', size = 'md', icon, unavailableReason, className, children, disabled, type = 'button', ...rest }: ButtonProps) {
+export function Button({ variant = 'secondary', size = 'md', icon, unavailableReason: reason, futureScope, className, children, disabled, type = 'button', ...rest }: ButtonProps) {
   const reasonId = useId();
+  const unavailableReason = reason ?? (futureScope ? 'Future scope — planned for a later version' : undefined);
   const isDisabled = disabled || unavailableReason !== undefined;
   return (
     <>
@@ -57,6 +60,7 @@ export function Button({ variant = 'secondary', size = 'md', icon, unavailableRe
       >
         {icon}
         {children}
+        {futureScope && <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-slate-700 uppercase">Future scope</span>}
       </button>
       {unavailableReason && (
         <span id={reasonId} className="sr-only">

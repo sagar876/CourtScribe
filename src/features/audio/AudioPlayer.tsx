@@ -102,7 +102,7 @@ export function AudioPlayer({ engine, store }: { engine: AudioEngine; store: Tra
         <div ref={waveRef} className={cn('h-[72px]', !state.waveformReady && 'opacity-0')} aria-label="Audio waveform — click or drag to seek" />
         {!state.waveformReady && (
           <div className="absolute inset-0 flex items-center justify-center px-4 text-center text-xs text-slate-500">
-            {state.status === 'empty' && 'No audio loaded. Open a local audio file (MP3, WAV, OGG, M4A, WebM) or press “Play in player” on a recording made above.'}
+            {state.status === 'empty' && 'No audio loaded. Open an audio file, or choose “Open in transcript player” on a saved recording.'}
             {state.status === 'loading' && 'Decoding waveform…'}
             {state.status === 'ready' && (state.waveformError ?? 'Decoding waveform…')}
             {state.status === 'error' && <span className="text-red-700">{state.error}</span>}

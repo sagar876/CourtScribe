@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Badge, type Tone } from '../../components/ui/Badge.tsx';
 import { Button } from '../../components/ui/Button.tsx';
 import { formatBytes, formatDuration } from '../../lib/format.ts';
@@ -9,24 +9,9 @@ import { recorder, useRecorderState } from './recordingSession.ts';
 const SAVE: Record<SaveStatus, { tone: Tone; label: string }> = {
   saving: { tone: 'info', label: 'Saving…' },
   saved: { tone: 'success', label: '✓ Saved in this browser' },
-  failed: { tone: 'danger', label: 'Not saved — browser storage refused it' },
+  failed: { tone: 'danger', label: 'Not saved — the browser is out of storage space. Download it now' },
   'memory-only': { tone: 'warning', label: 'Not saved — lost on reload' },
 };
-
-function useStorageEstimate(deps: unknown): { used: number; quota: number } | null {
-  const [estimate, setEstimate] = useState<{ used: number; quota: number } | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    navigator.storage
-      ?.estimate?.()
-      .then((e) => !cancelled && setEstimate({ used: e.usage ?? 0, quota: e.quota ?? 0 }))
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [deps]);
-  return estimate;
-}
 
 /** Native share sheet (iPhone/Android) with the original file, when the browser supports sharing files. */
 async function shareRecording(r: RecordingResult): Promise<'shared' | 'unsupported' | 'cancelled' | 'failed'> {
@@ -40,6 +25,12 @@ async function shareRecording(r: RecordingResult): Promise<'shared' | 'unsupport
     return err instanceof Error && err.name === 'AbortError' ? 'cancelled' : 'failed';
   }
 }
+
+/** "audio/webm" → "WebM audio" (the file itself keeps its real type). */
+const formatName = (mime: string) => {
+  const sub = mime.split('/')[1]?.split(';')[0] ?? mime;
+  return `${{ webm: 'WebM', mp4: 'MP4', ogg: 'OGG', aac: 'AAC', mpeg: 'MP3', wav: 'WAV' }[sub] ?? sub.toUpperCase()} audio`;
+};
 
 const canShareFiles = () => typeof navigator.canShare === 'function' && typeof navigator.share === 'function';
 
@@ -84,7 +75,7 @@ function RecordingItem({ r, playing, onPlay, onOpenWithTranscript }: { r: Record
         <div className="col-span-2">
           <dt className="text-slate-500">Case</dt>
           <dd className="text-slate-800">
-            {r.caseName || '—'} <span className="font-mono text-slate-600">({r.caseId || 'no case ID'})</span>
+            {r.caseName || '—'} <span className="text-slate-600">({r.caseId || 'no case ID'})</span>
           </dd>
         </div>
         <div>
@@ -96,7 +87,9 @@ function RecordingItem({ r, playing, onPlay, onOpenWithTranscript }: { r: Record
         </div>
         <div>
           <dt className="text-slate-500">Format</dt>
-          <dd className="font-mono text-slate-800">{r.mimeType}</dd>
+          <dd className="text-slate-800" title={r.mimeType}>
+            {formatName(r.mimeType)}
+          </dd>
         </div>
       </dl>
 
@@ -106,7 +99,6 @@ function RecordingItem({ r, playing, onPlay, onOpenWithTranscript }: { r: Record
         {r.complete && r.endedBy === 'device-lost' && <Badge tone="warning">Ended early — microphone disconnected</Badge>}
         {r.complete && r.endedBy === 'recorder-error' && <Badge tone="warning">Ended early — recorder error</Badge>}
         {r.downloaded ? <Badge tone="success">✓ Downloaded</Badge> : <Badge tone="neutral">Not downloaded yet</Badge>}
-        <span className="font-mono text-[11px] text-slate-500">session {r.sessionId || '—'}</span>
       </div>
 
       {mode === 'delete' ? (
@@ -171,7 +163,6 @@ export function RecordingLibrary({ onOpenWithTranscript }: { onOpenWithTranscrip
   const s = useRecorderState();
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState<string | null>(null);
-  const estimate = useStorageEstimate(s.recordings.length);
   const playing = s.recordings.find((r) => r.id === playingId);
 
   return (
@@ -182,8 +173,8 @@ export function RecordingLibrary({ onOpenWithTranscript }: { onOpenWithTranscrip
         <div key={p.id} className="flex flex-col gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2.5" role="group" aria-label="Interrupted recording">
           <p className="text-sm font-semibold text-amber-900">Interrupted recording found</p>
           <p className="text-xs text-amber-900">
-            Started {new Date(p.startedAt).toLocaleString()} · about {formatDuration(p.approxDurationMs)} · {formatBytes(p.size)} backed up before the page was reloaded or closed. The
-            recording is incomplete: anything after the interruption was not captured.
+            A recording started {new Date(p.startedAt).toLocaleString()} was cut off when the page closed. About {formatDuration(p.approxDurationMs)} of audio was kept and can be recovered;
+            anything after the interruption was not captured.
           </p>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="primary" onClick={() => void recorder.recover(p.id)}>
@@ -211,7 +202,7 @@ export function RecordingLibrary({ onOpenWithTranscript }: { onOpenWithTranscrip
       {playing && <LibraryPlayer key={playing.id} recording={playing} autoPlay onClose={() => setPlayingId(null)} />}
 
       {s.recordings.length === 0 && !s.restoring && s.recoverable.length === 0 && (
-        <p className="rounded-md border border-dashed border-slate-300 px-3 py-6 text-center text-sm text-slate-500">No saved recordings on this device yet. Recordings appear here when you stop recording.</p>
+        <p className="rounded-md border border-dashed border-slate-300 px-3 py-6 text-center text-sm text-slate-500">No saved recordings yet. Recordings appear here when you stop recording.</p>
       )}
 
       {s.recordings.length > 0 && (
@@ -222,11 +213,6 @@ export function RecordingLibrary({ onOpenWithTranscript }: { onOpenWithTranscrip
         </ul>
       )}
 
-      <p className="text-[11px] leading-relaxed text-slate-500">
-        Recordings are stored only on this device, in this browser — never uploaded. They play offline and stay until you delete them, but clearing this site’s data or using a private
-        window removes them, so download anything you need to keep.
-        {estimate && estimate.quota > 0 && ` Browser storage in use: ${formatBytes(estimate.used)} of about ${formatBytes(estimate.quota)} available to this site.`}
-      </p>
     </div>
   );
 }

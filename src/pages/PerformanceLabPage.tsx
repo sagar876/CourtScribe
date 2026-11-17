@@ -148,6 +148,7 @@ export function PerformanceLabPage() {
           searchEngine={engine}
           stats={viewerStats}
           probe={probe}
+          showDiagnostics
           showBenchmark
           benchmarkExtra={
             source === 'live' ? (

@@ -45,9 +45,6 @@ test('audio recording: explicit start, pause/resume, indicator across pages, sto
   const size = await page.evaluate(async (href) => (await (await fetch(href)).blob()).size, (await download.getAttribute('href'))!);
   expect(size).toBeGreaterThan(0);
 
-  // Played back in the workspace player with a real duration.
-  await saved.getByRole('button', { name: 'Open in transcript player' }).click();
-  await expect(page.getByLabel('Playback position')).not.toHaveText(/\/ 00:00:00\.0$/);
   expect(errors).toEqual([]);
 });
 

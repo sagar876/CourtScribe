@@ -150,7 +150,7 @@ export function VirtualTranscriptList({ store, live, activeIndex, selectedId, ma
       </div>
       {count === 0 && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-slate-400">
-          {live ? 'Waiting for live transcript segments…' : 'No segments loaded.'}
+          {live ? 'Press Start Listening in the Live Feed and speak — your words will appear here.' : 'No transcript loaded.'}
         </div>
       )}
       {live && !following && count > 0 && (

@@ -1,42 +1,33 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useRef, useState, useSyncExternalStore } from 'react';
 import { generateTranscript } from '../../shared/transcriptGenerator.ts';
 import { SegmentedControl } from '../components/ui/SegmentedControl.tsx';
 import { TranscriptStore } from '../features/transcript/TranscriptStore.ts';
-import { AudioEngine } from '../features/audio/AudioEngine.ts';
-import { AudioPlayer } from '../features/audio/AudioPlayer.tsx';
 import { SPEECH_LANGUAGES, type SpeechStatus } from '../features/speech/SpeechRecognizer.ts';
 import { speech, useSpeechState } from '../features/speech/speechSession.ts';
 import { CASE } from '../features/case/caseSession.ts';
 import { RecordingLibrary } from '../features/recording/RecordingLibrary.tsx';
 import { RecordingPanel } from '../features/recording/RecordingPanel.tsx';
-import { Badge } from '../components/ui/Badge.tsx';
 import { Button } from '../components/ui/Button.tsx';
 import { Card } from '../components/ui/Card.tsx';
 import { Icon } from '../components/ui/Icon.tsx';
 import { KeyValueGrid } from '../components/ui/KeyValueGrid.tsx';
 import { PageHeader } from '../components/ui/PageHeader.tsx';
 import { StatusIndicator } from '../components/ui/StatusIndicator.tsx';
-import { describeConnection } from '../features/realtime/connectionStatus.ts';
 import { live, liveTranscript, useLiveSnapshot } from '../features/realtime/liveSession.ts';
 import { TranscriptViewer } from '../features/transcript/TranscriptViewer.tsx';
-import { formatNumber, formatTimestamp } from '../lib/format.ts';
 
 
 function LiveTranscriptStats() {
   useSyncExternalStore(liveTranscript.subscribe, liveTranscript.getVersion);
-  const last = liveTranscript.at(liveTranscript.size - 1);
-  return (
-    <span className="tabular font-mono text-xs text-slate-500">
-      {formatNumber(liveTranscript.size)} segments{last ? ` · up to ${formatTimestamp(last.endTime)}` : ''}
-    </span>
-  );
+  const n = liveTranscript.size;
+  return <span className="tabular text-xs text-slate-500">{n.toLocaleString('en-IN')} {n === 1 ? 'line' : 'lines'}</span>;
 }
 
 const SPEECH_STATUS: Record<SpeechStatus, { tone: 'neutral' | 'info' | 'success' | 'warning' | 'danger'; label: string }> = {
   idle: { tone: 'neutral', label: 'Not listening' },
   requesting: { tone: 'info', label: 'Waiting for microphone permission…' },
   listening: { tone: 'success', label: 'Listening' },
-  restarting: { tone: 'info', label: 'Listening (restarting recognition…)' },
+  restarting: { tone: 'success', label: 'Listening' },
   stopping: { tone: 'info', label: 'Finishing the last phrase…' },
   error: { tone: 'danger', label: 'Speech recognition stopped' },
 };
@@ -48,20 +39,34 @@ const SPEECH_STATUS: Record<SpeechStatus, { tone: 'neutral' | 'info' | 'success'
 function LiveFeedCard() {
   const s = useLiveSnapshot();
   const sp = useSpeechState();
-  const conn = describeConnection(s);
   const status = SPEECH_STATUS[sp.status];
   const listening = sp.status === 'listening' || sp.status === 'restarting' || sp.status === 'requesting' || sp.status === 'stopping';
   const simulatorRunning = s.server?.config.running ?? false;
   const serverMode = !s.localMode && !s.configError;
+  // Only connection problems are worth mentioning to the user; local mode needs no status line at all.
   const feedLine = s.configError
-    ? s.configError
-    : s.localMode
-      ? 'Feed: local — processed in this browser (no Live Feed server configured)'
-      : `Feed: ${conn.label.toLowerCase()} — ${conn.detail}`;
+    ? 'The Live Feed is not available on this site at the moment.'
+    : s.localMode || s.state === 'disconnected'
+      ? null
+      : s.state === 'reconnecting'
+        ? 'Connection lost — reconnecting automatically…'
+        : s.state === 'syncing'
+          ? 'Catching up after a short disconnection…'
+          : s.state === 'connecting'
+            ? 'Connecting…'
+            : null;
   return (
     <Card
       title="Live Feed"
-      description="Press Start Listening and speak: recognised words appear in the transcript below. Browser-based speech recognition (proof of concept) — not a production transcription engine; speakers are not identified."
+      info={
+        <>
+          Turns speech into text as you talk. Choose the language, press <b>Start Listening</b> and speak — your words appear in the <b>Transcript</b> below.
+          <br />
+          <br />
+          Works in Google Chrome or Microsoft Edge with an internet connection: the browser sends the speech to its own online service to recognise it. Speakers are not identified
+          automatically. This is separate from audio recording — saved recordings are not transcribed.
+        </>
+      }
       className="h-full"
     >
       <div className="flex flex-col gap-3" data-tour="live-feed">
@@ -118,12 +123,14 @@ function LiveFeedCard() {
           </p>
         )}
 
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
-          <span className={s.configError ? 'text-amber-800' : undefined} title={conn.detail}>
+        {(feedLine || s.speechOutbox > 0) && (
+          <p className="text-xs text-amber-800" role="status">
             {feedLine}
-            {s.speechOutbox > 0 && ` · ${s.speechOutbox} phrase${s.speechOutbox === 1 ? '' : 's'} waiting to be sent`}
-          </span>
-          {serverMode && s.state !== 'disconnected' && (
+            {s.speechOutbox > 0 && ` ${s.speechOutbox} phrase${s.speechOutbox === 1 ? '' : 's'} will appear once the connection is back.`}
+          </p>
+        )}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
+          {serverMode && (s.state === 'reconnecting' || s.state === 'syncing') && (
             <span className="flex gap-1.5">
               <Button size="sm" variant="ghost" onClick={live.reconnectNow}>
                 Reconnect
@@ -137,21 +144,15 @@ function LiveFeedCard() {
 
         {s.sessionRestarted && (
           <p className="text-xs text-amber-700" role="status">
-            The Live Feed server restarted with a new session, so the live transcript started again from the beginning.
+            The Live Feed restarted, so the transcript started again from the beginning.
           </p>
         )}
         {simulatorRunning && (
           <p className="flex flex-wrap items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900" role="status">
-            The synthetic dialogue simulator (Performance Lab) is also running, so generated lines are mixed into this feed.
+            Sample test dialogue is also being added to this transcript (started from the Performance Lab).
             <Button size="sm" onClick={() => live.configureServer({ running: false })}>
               Stop simulator
             </Button>
-          </p>
-        )}
-        {sp.supported && (
-          <p className="text-[11px] leading-relaxed text-slate-500">
-            Uses the browser’s Web Speech API. In Chrome and Edge, audio is sent to the browser vendor’s online speech service, so an internet connection is required and the audio leaves this device. Independent
-            of Audio recording: the saved recording is not transcribed. Case {CASE.reference}.
           </p>
         )}
       </div>
@@ -159,11 +160,11 @@ function LiveFeedCard() {
   );
 }
 
-type TranscriptSource = 'live' | 10_000 | 100_000;
+type TranscriptSource = 'live' | 100_000;
 
 export function WorkspacePage() {
   const [{ source, store }, setSelection] = useState<{ source: TranscriptSource; store: TranscriptStore }>({ source: 'live', store: liveTranscript });
-  // Recorded-session transcripts start at 00:00 so they line up with any recording; built on first use, kept for this visit.
+  // The 100K sample shows that very long hearings stay fast (virtualised list); built on first use, kept for this visit.
   const recorded = useRef(new Map<number, TranscriptStore>());
   const selectSource = (next: TranscriptSource) => {
     if (next === 'live') return setSelection({ source: next, store: liveTranscript });
@@ -175,11 +176,6 @@ export function WorkspacePage() {
     setSelection({ source: next, store: s });
   };
 
-  // One engine per Workspace visit; disposed (audio, listeners, waveform, object URL) on leave.
-  const [audio] = useState(() => new AudioEngine());
-  useEffect(() => () => audio.dispose(), [audio]);
-  useEffect(() => audio.setTimeline(store), [audio, store]);
-
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -188,10 +184,10 @@ export function WorkspacePage() {
         description={`${CASE.session} · ${CASE.court}`}
         actions={
           <>
-            <Button icon={<Icon name="download" />} unavailableReason="Transcript export is not implemented yet">
+            <Button icon={<Icon name="download" />} futureScope>
               Export
             </Button>
-            <Button icon={<Icon name="check" />} unavailableReason="Transcript certification is not implemented yet">
+            <Button icon={<Icon name="check" />} futureScope>
               Certify transcript
             </Button>
           </>
@@ -208,7 +204,7 @@ export function WorkspacePage() {
               label: 'Language',
               value: (
                 <span className="flex items-center gap-2">
-                  {CASE.language} <Badge>ml-IN</Badge>
+                  {CASE.language}
                 </span>
               ),
             },
@@ -217,26 +213,75 @@ export function WorkspacePage() {
       </Card>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Card title="Audio recording" description="Captures audio from a microphone on this device. Independent of the transcript stream." className="h-full">
+        <Card
+          title="Audio recording"
+          info={
+            <>
+              Record the hearing with this computer’s microphone. Choose a microphone and press <b>Start Recording</b> — a red bar at the top of the screen shows that recording is on. You can pause and
+              resume. When you stop, the recording is saved on this computer and appears under <b>Saved recordings</b>.
+              <br />
+              <br />
+              Microphone names appear after you allow microphone access the first time. Please make sure recording is permitted in your court.
+            </>
+          }
+          className="h-full"
+        >
           <RecordingPanel />
         </Card>
         <LiveFeedCard />
       </div>
 
-      <Card title="Saved recordings" description="Recordings stored on this device. They play offline, without the transcript server.">
-        <RecordingLibrary onOpenWithTranscript={(r) => audio.loadUrl(r.url, r.name)} />
+      <Card
+        title="Saved recordings"
+        info={
+          <>
+            Your recordings are kept on this computer, in this browser — they are not uploaded anywhere. You can play, download, share, rename or delete them here, even without internet.
+            <br />
+            <br />
+            Download any recording you need to keep: clearing the browser’s data removes them.
+          </>
+        }
+      >
+        <RecordingLibrary />
       </Card>
 
-      <Card title="Playback" description="Play a recording or a local audio file, synchronised with the transcript by segment start time. Click a segment to seek to it.">
-        <AudioPlayer engine={audio} store={store} />
+      <Card
+        title="Playback with transcript"
+        className="opacity-90"
+        actions={<span title="Planned for a later version" className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-slate-700 uppercase">Future scope</span>}
+        info={
+          <>
+            <b>Coming in a later version.</b> Listen to a recording and follow along in the transcript: the line being spoken is highlighted as the audio plays, and clicking any line jumps
+            the audio to that moment — useful for checking exactly how something was said.
+            <br />
+            <br />
+            This needs the transcript to be produced from the recording itself, so that the text and the audio share the same timings. Today the Live Feed and audio recording work separately.
+          </>
+        }
+      >
+        <div
+          aria-disabled="true"
+          title="Future scope — listen to a recording and follow along in the transcript"
+          className="flex flex-col items-center gap-2 rounded-md border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center"
+        >
+          <p className="text-sm font-medium text-slate-700">Listen to a recording while following the transcript</p>
+          <p className="max-w-xl text-xs text-slate-600">
+            Planned: play a saved recording, see the line being spoken highlighted, and click any line to hear that moment. To listen to a recording now, use <b>Play</b> under Saved recordings.
+          </p>
+        </div>
       </Card>
 
       <Card
         title="Transcript"
-        description={
-          source === 'live'
-            ? 'Recognised speech from the Live Feed, via the Node server. Times are relative to the server session. Interim rows update as you speak and become Final.'
-            : 'Synthetic recorded session starting at 00:00 — use it to check audio synchronisation.'
+        info={
+          <>
+            Everything recognised by the Live Feed appears here, newest at the bottom. <b>Interim</b> lines may still change while someone is speaking; they become <b>Final</b> when the sentence
+            is complete. Search for a word, jump to a time, or click a line to see its details. If you scroll up to read, new lines won’t move the page — use <b>Jump to latest</b> to return.
+            <br />
+            <br />
+            <b>Sample: 100,000 lines</b> loads a made-up transcript about the length of several full days of hearings, to show that searching and scrolling stay instant however long a
+            transcript gets. It is sample data, not a real case.
+          </>
         }
         actions={
           <SegmentedControl<TranscriptSource>
@@ -244,16 +289,15 @@ export function WorkspacePage() {
             value={source}
             onChange={selectSource}
             options={[
-              { value: 'live', label: 'Live feed' },
-              { value: 10_000, label: 'Recorded · 10K' },
-              { value: 100_000, label: 'Recorded · 100K' },
+              { value: 'live', label: 'Live Feed' },
+              { value: 100_000, label: 'Sample: 100,000 lines', title: 'Sample transcript (not a real hearing) showing that very long transcripts stay fast' },
             ]}
           />
         }
         bodyClassName="p-0"
       >
         <div className="p-4">
-          <TranscriptViewer key={String(source)} store={store} live={source === 'live'} playback={audio} listClassName="h-[clamp(360px,60vh,720px)]" />
+          <TranscriptViewer key={String(source)} store={store} live={source === 'live'} listClassName="h-[clamp(360px,60vh,720px)]" />
         </div>
       </Card>
     </div>

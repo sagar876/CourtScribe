@@ -55,7 +55,6 @@ export function RecordingPanel() {
           Refresh devices
         </Button>
       </div>
-      {!s.devicesLabelled && s.devices.length > 0 && <p className="-mt-1 text-[11px] text-slate-500">Microphone names appear after you allow access the first time.</p>}
 
       <div className="flex flex-wrap gap-2">
         {s.status === 'requesting' ? (
@@ -84,22 +83,9 @@ export function RecordingPanel() {
       </div>
 
       <LevelMeter recorder={recorder} active={s.status === 'recording'} />
-      {!s.levelSupported && <p className="text-[11px] text-slate-500">The audio level meter is not supported in this browser; recording still works.</p>}
+      
 
-      <dl className="grid grid-cols-3 gap-2 text-xs">
-        <div>
-          <dt className="text-slate-500">Captured</dt>
-          <dd className="tabular font-mono text-slate-800">{formatBytes(s.bytes)}</dd>
-        </div>
-        <div>
-          <dt className="text-slate-500">Format</dt>
-          <dd className="truncate font-mono text-slate-800">{s.mimeType ?? '—'}</dd>
-        </div>
-        <div>
-          <dt className="text-slate-500">Recording ID</dt>
-          <dd className="truncate font-mono text-slate-800">{s.recordingId ?? '—'}</dd>
-        </div>
-      </dl>
+      {s.bytes > 0 && <p className="tabular text-xs text-slate-600">Recorded so far: {formatBytes(s.bytes)}</p>}
 
       {s.error && (
         <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-800" role="alert">
@@ -129,13 +115,10 @@ export function RecordingPanel() {
       {s.recordings[0]?.saveStatus === 'saving' && <p className="text-xs text-slate-600" role="status">Saving the recording to this browser…</p>}
       {s.recordings[0]?.saveStatus === 'saved' && s.status === 'idle' && (
         <p className="text-xs text-emerald-800" role="status">
-          ✓ “{s.recordings[0].name}” is saved — find it under Saved recordings.
+          ✓ Saved — you’ll find it under Saved recordings.
         </p>
       )}
 
-      <p className="text-[11px] leading-relaxed text-slate-500">
-        Audio stays on this device and is never uploaded or transcribed — the transcript comes from a separate demo stream. While recording, audio is backed up every second so an interruption loses at most about a second. You are responsible for obtaining any permissions required and for complying with the court’s rules on recording proceedings.
-      </p>
     </div>
   );
 }
