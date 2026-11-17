@@ -32,8 +32,20 @@ export function SegmentedControl<T extends string | number>({ label, options, va
         aria-disabled={allDisabled || undefined}
         className={cn('inline-flex max-w-full flex-wrap rounded-md border bg-slate-100 p-0.5', allDisabled ? 'border-dashed border-slate-300' : 'border-slate-300')}
       >
-        {options.map((o) => {
+        {options.map((o, index) => {
           const active = o.value === value;
+          // Radiogroup keyboard pattern: one tab stop; arrow keys move and select.
+          const tabbable = active || (!options.some((x) => x.value === value && !x.disabled) && index === options.findIndex((x) => !x.disabled));
+          const move = (dir: 1 | -1, from: HTMLElement) => {
+            for (let step = 1; step <= options.length; step++) {
+              const next = options[(index + dir * step + options.length) % options.length]!;
+              if (next.disabled) continue;
+              onChange(next.value);
+              const buttons = from.parentElement?.querySelectorAll<HTMLButtonElement>('[role="radio"]');
+              buttons?.[options.indexOf(next)]?.focus();
+              return;
+            }
+          };
           return (
             <button
               key={String(o.value)}
@@ -42,6 +54,16 @@ export function SegmentedControl<T extends string | number>({ label, options, va
               aria-checked={active}
               disabled={o.disabled}
               title={o.title}
+              tabIndex={tabbable ? 0 : -1}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  move(1, e.currentTarget);
+                } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  move(-1, e.currentTarget);
+                }
+              }}
               onClick={() => onChange(o.value)}
               className={cn(
                 'rounded px-2.5 font-medium whitespace-nowrap transition-colors disabled:cursor-not-allowed',

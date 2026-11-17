@@ -16,7 +16,7 @@ test('Performance Lab navigation: sidebar, URL, refresh, direct load, back/forwa
   await expect(page).toHaveURL(/\/performance-lab$/);
   await expect(labHeading(page)).toBeVisible();
   await expect(nav(page).getByRole('link', { name: 'Performance Lab' })).toHaveAttribute('aria-current', 'page');
-  await expect(page.locator('[data-metric="Frame rate"]')).toBeVisible();
+  await expect(page.locator('[data-metric="Connection"]')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Run A then B' })).toBeEnabled();
   await expect(page.getByRole('img', { name: /Server send rate/ })).toBeVisible();
 

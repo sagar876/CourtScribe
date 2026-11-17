@@ -58,8 +58,15 @@ export function TranscriptRowView({ segment, index, isActive, isSelected, isMatc
       data-transcript-row=""
       role="option"
       aria-selected={isSelected}
-      tabIndex={-1}
+      aria-label={`${formatTimestamp(segment.startTime)}, ${segment.speakerName}: ${segment.text}${segment.isPartial ? ' (interim)' : ''}`}
+      tabIndex={0}
       onClick={() => onSelect(segment.id, index)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect(segment.id, index);
+        }
+      }}
       className={cn(
         'group grid cursor-pointer grid-cols-[84px_1fr] gap-x-3 border-b border-slate-100 px-4 py-2.5 text-sm sm:grid-cols-[84px_150px_1fr_auto]',
         isSelected ? 'bg-accent-50' : isActive ? 'bg-amber-50/70' : isCurrentMatch ? 'bg-amber-50' : 'hover:bg-slate-50',

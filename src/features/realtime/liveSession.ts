@@ -313,9 +313,18 @@ const isLocalHost = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostna
  */
 const configuredUrl = import.meta.env.VITE_STREAM_URL;
 export const STREAM_URL: string | null = configuredUrl === 'local' ? null : (configuredUrl ?? (isLocalHost ? `ws://${location.hostname}:${STREAM_PORT}` : null));
+const isWebSocketUrl = (u: string) => {
+  try {
+    return ['ws:', 'wss:'].includes(new URL(u).protocol);
+  } catch {
+    return false;
+  }
+};
 const STREAM_CONFIG_ERROR = !STREAM_URL
   ? null
-  : location.protocol === 'https:' && STREAM_URL.startsWith('ws://')
+  : !isWebSocketUrl(STREAM_URL)
+    ? `VITE_STREAM_URL must be a ws:// or wss:// address (got “${STREAM_URL}”).`
+    : location.protocol === 'https:' && STREAM_URL.startsWith('ws://')
     ? 'This page is served over HTTPS, so the Live Feed server must use a secure wss:// address (VITE_STREAM_URL).'
     : null;
 

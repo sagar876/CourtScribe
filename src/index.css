@@ -33,6 +33,24 @@
   :focus-visible {
     @apply outline-2 outline-offset-2 outline-accent-500;
   }
+  /* Tailwind v4 resets buttons to the default cursor; restore the pointer on real actions only. */
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  [role='radio']:not(:disabled),
+  [role='option'],
+  summary,
+  select:not(:disabled),
+  input[type='range']:not(:disabled),
+  input[type='checkbox']:not(:disabled),
+  input[type='file']:not(:disabled) {
+    cursor: pointer;
+  }
+  button:disabled,
+  select:disabled,
+  input:disabled,
+  [aria-disabled='true'] {
+    cursor: not-allowed;
+  }
 }
 
 @utility tabular {

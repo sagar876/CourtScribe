@@ -16,12 +16,9 @@ interface Overview {
   renderP50: number;
   renderP95: number;
   searchMs: number | null;
-  searchEngine: string | null;
-  fps: number | null;
   longTasks: number | null;
   maxLongTaskMs: number;
   connection: ReturnType<typeof describeConnection>;
-  monitorRenders: number | null;
 }
 
 const POLL_MS = 250;
@@ -33,24 +30,18 @@ function read(monitor: PerfMonitor, probe: ViewerProbe): Overview {
     datasetSize: probe.store?.size ?? null,
     mountedRows: probe.list?.element()?.querySelectorAll('[data-transcript-row]').length ?? null,
     incoming: s.incomingPerSecond,
-    processed: s.processedPerSecond,
+    processed: s.processed,
     queueDepth: s.queueDepth,
     renderP50: s.renderP50,
     renderP95: s.renderP95,
     searchMs: probe.search?.totalMs ?? null,
-    searchEngine: probe.search ? (probe.search.engine === 'worker' ? 'Web Worker' : 'main thread') : null,
-    fps: perf.latest?.fps ?? null,
     longTasks: perf.supported.longtask ? perf.totals.longTasks : null,
     maxLongTaskMs: perf.totals.maxLongTaskMs,
     connection: describeConnection(s),
-    monitorRenders: perf.latest?.extra.monitorRenders ?? null,
   };
 }
 
-/**
- * The ten headline metrics in one strip. One polling component at 4 Hz — it
- * reads everything without subscribing, so it is the only thing that re-renders.
- */
+/** The key measurements in one strip, polled at 4 Hz by this component only. */
 export function LiveOverview({ monitor, probe }: { monitor: PerfMonitor; probe: ViewerProbe }) {
   useMonitorCommit();
   const [o, setO] = useState(() => read(monitor, probe));
@@ -59,33 +50,64 @@ export function LiveOverview({ monitor, probe }: { monitor: PerfMonitor; probe: 
     return () => clearInterval(t);
   }, [monitor, probe]);
 
-  const latencyHint = Number.isNaN(o.renderP50) ? 'show “Live stream” to measure' : 'socket receive → React commit';
+  const hasLatency = Number.isFinite(o.renderP50);
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6">
-      <MetricTile label="Dataset size" value={o.datasetSize !== null ? formatNumber(o.datasetSize) : '—'} unit="segments" source="browser" />
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
       <MetricTile
-        label="Mounted rows"
-        value={o.mountedRows !== null ? formatNumber(o.mountedRows) : '—'}
-        hint={o.datasetSize ? `${((100 * (o.mountedRows ?? 0)) / o.datasetSize).toFixed(o.datasetSize > 10_000 ? 3 : 1)}% of dataset in the DOM` : undefined}
-        tone={(o.mountedRows ?? 0) > 2_000 ? 'danger' : 'default'}
-        source="browser"
+        label="Connection"
+        value={o.connection.label}
+        hint={o.connection.detail}
+        tone={o.connection.tone === 'warning' || o.connection.tone === 'danger' ? 'warning' : 'default'}
+        info="Whether this page is connected to the Live Feed server. Throughput and latency figures only move while events are arriving."
       />
-      <MetricTile label="Incoming" value={formatNumber(o.incoming)} unit="events/s" hint="WebSocket frames" source="browser" />
-      <MetricTile label="Processed" value={formatNumber(o.processed)} unit="events/s" hint="applied to the store" source="browser" />
-      <MetricTile label="Queue depth" value={formatNumber(o.queueDepth)} hint="pending in bounded queue" tone={o.queueDepth > 1_000 ? 'warning' : 'default'} source="browser" />
-      <MetricTile label="Connection" value={o.connection.label} hint={o.connection.detail} tone={o.connection.tone === 'danger' ? 'danger' : o.connection.tone === 'warning' ? 'warning' : 'default'} source="browser" />
-      <MetricTile label="Event→render p50" value={formatMs(o.renderP50)} unit={Number.isNaN(o.renderP50) ? undefined : 'ms'} hint={latencyHint} source="browser" />
-      <MetricTile label="Event→render p95" value={formatMs(o.renderP95)} unit={Number.isNaN(o.renderP95) ? undefined : 'ms'} hint={latencyHint} tone={o.renderP95 > 150 ? 'warning' : 'default'} source="browser" />
-      <MetricTile label="Search time" value={o.searchMs !== null ? formatMs(o.searchMs) : '—'} unit={o.searchMs !== null ? 'ms' : undefined} hint={o.searchEngine ? `last query · ${o.searchEngine}` : 'type in the transcript search'} source="browser" />
-      <MetricTile label="Frame rate" value={o.fps ?? '—'} unit={o.fps !== null ? 'fps' : undefined} hint="requestAnimationFrame" tone={o.fps !== null && o.fps < 45 ? 'warning' : 'default'} source="browser" />
+      <MetricTile
+        label="Events per second"
+        value={formatNumber(o.incoming)}
+        unit="/s"
+        hint="received in the last second"
+        info="Live Feed events received per second. Shows the incoming load the page is handling right now."
+      />
+      <MetricTile
+        label="Events processed"
+        value={formatNumber(o.processed)}
+        hint="applied to the transcript"
+        info="Total events checked (duplicates removed, order restored) and applied to the transcript since connecting. Should keep pace with the events received."
+      />
+      <MetricTile
+        label="Queue depth"
+        value={formatNumber(o.queueDepth)}
+        hint="events waiting"
+        tone={o.queueDepth > 1_000 ? 'warning' : 'default'}
+        info="Events received but not yet processed. Briefly rising during bursts is normal; a queue that keeps growing means the page cannot keep up."
+      />
+      <MetricTile
+        label="Event → render latency"
+        value={hasLatency ? `${formatMs(o.renderP50)} / ${formatMs(o.renderP95)}` : '—'}
+        unit={hasLatency ? 'ms' : undefined}
+        hint={hasLatency ? 'p50 / p95' : 'shown while “Live stream” is displayed below'}
+        tone={o.renderP95 > 150 ? 'warning' : 'default'}
+        info="Time from receiving an event to showing it on screen: typical (p50) and slowest 5% (p95). Lower means faster visual feedback; it includes the 50 ms batching window."
+      />
+      <MetricTile
+        label="Rendered rows"
+        value={o.mountedRows !== null ? formatNumber(o.mountedRows) : '—'}
+        hint={o.datasetSize !== null ? `of ${formatNumber(o.datasetSize)} transcript lines` : undefined}
+        info="Transcript rows actually present on the page. With virtualisation this stays small however long the transcript is — that is what keeps 100,000 lines fast."
+      />
       <MetricTile
         label="Long tasks"
         value={o.longTasks !== null ? formatNumber(o.longTasks) : 'n/a'}
-        hint={o.longTasks !== null ? `max ${formatMs(o.maxLongTaskMs)} ms · PerformanceObserver` : 'Long Tasks API not supported here'}
+        hint={o.longTasks !== null ? (o.longTasks ? `longest ${formatMs(o.maxLongTaskMs)} ms` : 'since this page opened') : 'not supported by this browser'}
         tone={o.longTasks ? 'warning' : 'default'}
-        source="browser"
+        info="Moments when the page was busy for more than 50 ms in one go — long enough for clicks or scrolling to feel delayed. Fewer is better."
       />
-      <MetricTile label="Dashboard renders" value={o.monitorRenders ?? '—'} unit={o.monitorRenders !== null ? '/s' : undefined} hint="this monitoring UI's own commits" source="browser" />
+      <MetricTile
+        label="Search time"
+        value={o.searchMs !== null ? formatMs(o.searchMs) : '—'}
+        unit={o.searchMs !== null ? 'ms' : undefined}
+        hint={o.searchMs !== null ? 'last search' : 'search the transcript below'}
+        info="How long the last transcript search took, from typing to results. It runs in a background thread, so the page stays responsive even on 100,000 lines."
+      />
     </div>
   );
 }
