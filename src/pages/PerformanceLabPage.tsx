@@ -6,6 +6,7 @@ import { SegmentedControl } from '../components/ui/SegmentedControl.tsx';
 import { AbBench } from '../features/perf/ab/AbBench.tsx';
 import { LiveOverview } from '../features/perf/LiveOverview.tsx';
 import { PerfCharts } from '../features/perf/PerfCharts.tsx';
+import { TransferOverview } from '../features/perf/TransferOverview.tsx';
 import { usePerfMonitor } from '../features/perf/usePerfMonitor.ts';
 import { live, liveTranscript } from '../features/realtime/liveSession.ts';
 import { StreamControls } from '../features/realtime/StreamControls.tsx';
@@ -72,6 +73,14 @@ export function PerformanceLabPage() {
         info="Hover the ⓘ beside each metric for what it measures and how to read it. Values move while the Live Feed or the stress controls are sending events."
       >
         <LiveOverview monitor={monitor} probe={probe} />
+      </Card>
+
+      <Card
+        title="Uploads, downloads and storage"
+        description="Real transfers from the Documents page, and this browser’s storage."
+        info="These values come from actual uploads and downloads you make on the Documents page (they keep running if you switch pages) and the browser’s own storage estimate. Nothing here is simulated."
+      >
+        <TransferOverview />
       </Card>
 
       <Card

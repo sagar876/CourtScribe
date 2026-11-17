@@ -16,6 +16,9 @@ const paths = {
   clock: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3 2',
   plug: 'M9 3v5M15 3v5M7 8h10v4a5 5 0 0 1-10 0zM12 17v4',
   arrowDown: 'M12 5v14M6 13l6 6 6-6',
+  document: 'M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6',
+  edit: 'M4 20h4L19 9l-4-4L4 16zM14 6l4 4',
+  waveform: 'M4 12h2M8 8v8M12 5v14M16 9v6M20 12h0',
 } as const;
 
 export type IconName = keyof typeof paths;

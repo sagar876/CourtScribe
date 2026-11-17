@@ -3,7 +3,10 @@ import { cn } from '../../lib/cn.ts';
 import { Icon, type IconName } from '../ui/Icon.tsx';
 
 const NAV: { to: string; label: string; icon: IconName }[] = [
-  { to: '/workspace', label: 'Workspace', icon: 'workspace' },
+  { to: '/workspace', label: 'Courtroom', icon: 'workspace' },
+  { to: '/recordings', label: 'Recordings', icon: 'waveform' },
+  { to: '/documents', label: 'Documents', icon: 'document' },
+  { to: '/editor', label: 'Editor', icon: 'edit' },
   { to: '/performance-lab', label: 'Performance Lab', icon: 'lab' },
 ];
 
